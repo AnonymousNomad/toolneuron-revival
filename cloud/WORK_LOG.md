@@ -49,3 +49,9 @@ Next mission: TN-CLOUD-00.
 - Fresh-context review caught a notification/foreground recovery regression in bind-only crash rebinds. The client now preserves prior explicit foreground intent across those rebinds, clears it on unbind, and uses the same explicit startup path for timeout recovery.
 - FAST and SLICE PASS: existing 120 JVM tests green, debug APK with both native ABIs built. These checks establish compilation/regression readiness, not reproduction of Android foreground-service restrictions. Device background-start, notification Stop and process-death recovery acceptance remain NOT TESTED; no synthetic JVM platform test is claimed.
 - No security permissions/service types or inference model behavior were changed. Next: workstation/window/taskbar/telemetry/boot reconstruction; Covert engine source request remains pending.
+
+## Website target correction — 2026-10-22
+- Owner corrected the publication target: ToolNeuron web updates belong in the existing Floot project **Covert Nexus**, project id `01147976-3673-42c7-9220-2d028594ba86`.
+- `AnonymousNomad/anonymousnomad.github.io` is not the ToolNeuron publication destination.
+- Existing Floot project already contains ToolNeuron marketplace/publisher/GameBridge/Foundry/catalog material.
+- Cloud publication instructions were corrected accordingly.
