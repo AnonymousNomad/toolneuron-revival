@@ -35,10 +35,26 @@ object LaptopCodec {
         state.activeWorkspaceId?.let { active ->
             if (active !in wsIds) throw LaptopStateError("active workspace missing: $active")
         }
+        state.workspaces.forEach { workspace ->
+            try { workspace.vibeDraft?.validate() } catch (_: Exception) { throw LaptopStateError("invalid Vibe draft") }
+            try { workspace.companion?.validate() } catch (_: Exception) { throw LaptopStateError("invalid companion plan") }
+            try { workspace.creation?.validate() } catch (_: Exception) { throw LaptopStateError("invalid creation plan") }
+        }
+        val conversations = state.workspaces.flatMap { it.conversationIds }
+        if (conversations.any { it.isBlank() || it.length > 256 } || conversations.distinct().size != conversations.size) {
+            throw LaptopStateError("invalid or duplicate conversation binding")
+        }
+        val buildIds = state.vibeBuilds.map { it.id }
+        if (buildIds.distinct().size != buildIds.size) throw LaptopStateError("duplicate Vibe build id")
+        state.vibeBuilds.forEach { build ->
+            if (build.workspaceId !in wsIds || state.evidence.none { it.id == build.evidenceId }) throw LaptopStateError("Vibe build references missing workspace/evidence")
+            if (!build.id.matches(Regex("vb-[a-f0-9]{32}")) || !build.digest.matches(Regex("[a-f0-9]{64}"))) throw LaptopStateError("invalid Vibe build identity")
+        }
         val taskIds = state.tasks.map { it.id }
         if (taskIds.size != taskIds.toSet().size) throw LaptopStateError("duplicate task id")
         val taskIdSet = taskIds.toSet()
         state.tasks.forEach { t ->
+            if (t.workspaceId != null && t.workspaceId !in wsIds) throw LaptopStateError("task references missing workspace")
             if (t.checkpointIds.any { ref -> state.checkpoints.none { it.id == ref } }) {
                 throw LaptopStateError("task ${t.id} references missing checkpoint")
             }
@@ -60,6 +76,16 @@ object LaptopCodec {
         }
         val evIds = state.evidence.map { it.id }
         if (evIds.size != evIds.toSet().size) throw LaptopStateError("duplicate evidence id")
+        if (state.modelLabRuns.map { it.id }.distinct().size != state.modelLabRuns.size) throw LaptopStateError("duplicate Model Lab run")
+        state.modelLabRuns.forEach { run ->
+            try { run.validateHistorical() } catch (_: Exception) { throw LaptopStateError("invalid Model Lab run") }
+        }
+        state.qualifications.forEach { record ->
+            if (record.recordedAtMs <= 0 || record.checks.isEmpty() || record.checks.map { it.id }.distinct().size != record.checks.size)
+                throw LaptopStateError("invalid qualification record")
+            if (record.checks.any { check -> check.evidenceRefs.isEmpty() || check.evidenceRefs.any { it !in evIds } })
+                throw LaptopStateError("qualification references missing evidence")
+        }
         val cpIds = state.checkpoints.map { it.id }
         if (cpIds.size != cpIds.toSet().size) throw LaptopStateError("duplicate checkpoint id")
         state.resident.activeSessionId?.let { active ->

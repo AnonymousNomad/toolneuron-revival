@@ -24,6 +24,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.dark.tool_neuron.laptop.CipherSlotStatus
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,11 +50,20 @@ import com.dark.tool_neuron.viewmodel.CipherViewModel
 fun CipherScreen(
     innerPadding: PaddingValues,
     viewModel: CipherViewModel = hiltViewModel(),
+    onOpenModelLab: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val streamingText by viewModel.streaming.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val slot by viewModel.slot.collectAsStateWithLifecycle()
+    val laptop by viewModel.laptopState.collectAsStateWithLifecycle()
+    val installed by viewModel.installedModels.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    var assigning by remember { mutableStateOf(false) }
+    var selectedModel by remember { mutableStateOf<String?>(null) }
+    var runtime by remember { mutableStateOf("ggml") }
+    LaunchedEffect(laptop.cipherAssignment, laptop.qualifications, installed) { viewModel.refreshSlot() }
     val dimens = LocalDimens.current
 
     var input by remember { mutableStateOf("") }
@@ -58,6 +71,20 @@ fun CipherScreen(
     var showInfo by remember { mutableStateOf(false) }
     var profile by remember { mutableStateOf(4096) }
     val active = state is ResidentEngine.ResidentUiState.Active
+
+    if (assigning) AlertDialog(onDismissRequest = { assigning = false }, title = { Text("Cipher assignment") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text("Select a model, runtime and context chassis. Assignment does not qualify a model.")
+            viewModel.admittedModels().forEach { model -> TextButton(onClick = { selectedModel = model.id }) {
+                Text((if (selectedModel == model.id) "● " else "○ ") + model.name)
+            } }
+            if (viewModel.admittedModels().isEmpty()) Text("Import a generation GGUF in Models first.")
+            Row { TextButton(onClick = { profile = 4096 }) { Text(if (profile == 4096) "● 4K" else "4K") }
+                TextButton(onClick = { profile = 8192 }) { Text(if (profile == 8192) "● 8K" else "8K") } }
+            TextButton(onClick = { runtime = "ggml" }) { Text((if (runtime == "ggml") "● " else "") + "Existing GGML") }
+            TextButton(onClick = { runtime = "covert-r0" }) { Text((if (runtime == "covert-r0") "● " else "") + "Covert R0 — native source unavailable") }
+        } }, confirmButton = { TextButton(onClick = { selectedModel?.let { viewModel.assign(it, runtime, profile) }; assigning = false }, enabled = selectedModel != null && !busy) { Text("Save assignment") } },
+        dismissButton = { TextButton(onClick = { assigning = false }) { Text("Cancel") } })
 
     Column(
         modifier = Modifier
@@ -79,18 +106,21 @@ fun CipherScreen(
                     Text("Cipher · local/offline", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     TextButton(onClick = { showInfo = true }) { Text("Info") }
                 }
+                TextButton(onClick = onOpenModelLab) { Text("Model Lab / qualification") }
+                Text("Slot: ${slot.status} · ${slot.reason}", style = MaterialTheme.typography.bodySmall)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (!active) Row(horizontalArrangement = Arrangement.spacedBy(dimens.spacingXs)) {
+                    TextButton(onClick = { assigning = true }, enabled = !busy) { Text("Assign model/chassis") }
+                    TextButton(onClick = { viewModel.clearAssignment() }, enabled = !busy && laptop.cipherAssignment != null) { Text("Clear") }
+                }
                 when (val s = state) {
                     is ResidentEngine.ResidentUiState.Idle, is ResidentEngine.ResidentUiState.Stopped -> {
                         Text(
-                            "Not running. The resident binds an admitted local model and can only read the Laptop (no execution).",
+                            "Not running. Assign a durable model and qualify it in Model Lab. Cipher can read the Laptop; it cannot execute actions.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(dimens.spacingXs)) {
-                            TextButton(onClick = { profile = 4096 }) { Text(if (profile == 4096) "● 4K" else "○ 4K") }
-                            TextButton(onClick = { profile = 8192 }) { Text(if (profile == 8192) "● 8K" else "○ 8K") }
-                        }
-                        OutlinedButton(onClick = { viewModel.start(profile) }, enabled = !busy) { Text("Start Cipher") }
+                        OutlinedButton(onClick = { viewModel.start() }, enabled = !busy && slot.status == CipherSlotStatus.READY) { Text("Start Cipher") }
                     }
                     is ResidentEngine.ResidentUiState.Starting -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(dimens.spacingXs)) {
@@ -116,7 +146,7 @@ fun CipherScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
-                        OutlinedButton(onClick = { viewModel.start(profile) }, enabled = !busy) { Text("Retry") }
+                        OutlinedButton(onClick = { viewModel.start() }, enabled = !busy) { Text("Retry") }
                     }
                 }
             }

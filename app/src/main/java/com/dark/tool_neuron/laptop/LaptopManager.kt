@@ -29,6 +29,8 @@ class LaptopManager @Inject constructor(
         workspacesBaseDir = workspacesRoot,
     )
 
+    val vibe = com.dark.tool_neuron.studio.VibeStudio(core, workspacesRoot)
+
     val state = core.state
     val tools = ToolRegistry.SEEDS
 
@@ -40,7 +42,7 @@ class LaptopManager @Inject constructor(
         workspaceDirOf = ::workspaceDir,
     )
 
-    fun workspaceDir(id: String): File? = File(workspacesRoot, id).takeIf { it.isDirectory }
+    fun workspaceDir(id: String): File? = runCatching { com.dark.tool_neuron.util.WorkspacePaths.root(workspacesRoot, id, state.value.workspaces.map { it.id }.toSet()) }.getOrNull()
 
     fun listWorkspaceEntries(id: String): List<LaptopCore.WorkspaceEntry> {
         val dir = workspaceDir(id) ?: return emptyList()
@@ -49,6 +51,7 @@ class LaptopManager @Inject constructor(
             if (depth > 3 || out.size >= 200) return
             d.listFiles()?.sortedBy { it.name }?.forEach { f ->
                 if (out.size >= 200) return
+                if (!com.dark.tool_neuron.util.WorkspacePaths.unaliased(f)) return@forEach
                 val r = if (rel.isEmpty()) f.name else "$rel/${f.name}"
                 out += LaptopCore.WorkspaceEntry(r, f.isDirectory, if (f.isFile) f.length() else 0L)
                 if (f.isDirectory) walk(f, r, depth + 1)
@@ -66,7 +69,10 @@ class LaptopManager @Inject constructor(
         val target = File(root, path).canonicalFile
         if (target != root && !target.path.startsWith(root.path + File.separator)) return null
         if (!target.isFile) return null
-        return runCatching { target.readText().take(8000) }.getOrNull()
+        return runCatching {
+            require(com.dark.tool_neuron.util.WorkspacePaths.unaliased(File(root, path)))
+            target.reader().use { reader -> val buffer = CharArray(8000); val count = reader.read(buffer); if (count < 0) "" else String(buffer, 0, count) }
+        }.getOrNull()
     }
 
     private val archCache = ConcurrentHashMap<String, String?>()

@@ -81,6 +81,7 @@ class HomeViewModel @Inject constructor(
     private val webSearchCoordinator: WebSearchCoordinator,
     private val appPrefs: AppPreferences,
     private val vlmCache: VlmVisionCacheRepository,
+    private val laptop: com.dark.tool_neuron.laptop.LaptopManager,
 ) : ViewModel() {
 
     val speakingMessageId: StateFlow<String?> = voiceManager.speakingId
@@ -468,7 +469,7 @@ class HomeViewModel @Inject constructor(
                 updateStatus(uri, ImageEncodeStatus.Encoding)
                 val quality = runCatching { ImageQuality.valueOf(appPrefs.vlmImageQuality) }
                     .getOrDefault(ImageQuality.MEDIUM)
-                val ok = InferenceClient.precomputeVision(app, uri, quality)
+                val ok = InferenceClient.precomputeVision(app, uri, quality, modelSession.requireLoadId())
                 if (ok) {
                     vlmCache.markCached(activeId, sha, bytes.size.toLong(), imageMaxTokens = -1)
                     updateStatus(uri, ImageEncodeStatus.Cached)
@@ -549,7 +550,29 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { ragManager.ensureReady() }
     }
 
+    val projectState = laptop.state
+    private val _projectError = MutableStateFlow<String?>(null)
+    val projectError = _projectError.asStateFlow()
+
+    fun projectActionFailed(message: String) { _projectError.value = message.take(600) }
+
+    fun bindCurrentProject(workspaceId: String?) {
+        val chatId = _currentChatId.value
+        val result = if (chatId == null) {
+            if (workspaceId == null) laptop.core.clearActiveWorkspace() else laptop.core.openWorkspace(workspaceId)
+        } else if (workspaceId == null) {
+            laptop.core.unbindConversation(chatId, clearSelection = true)
+        } else laptop.core.bindConversation(workspaceId, chatId)
+        _projectError.value = result.exceptionOrNull()?.message
+    }
+
     fun selectChat(chatId: String) {
+        val project = laptop.core.projectForConversation(chatId)
+        val selection = if (project == null) laptop.core.clearActiveWorkspace() else laptop.core.openWorkspace(project.id)
+        if (selection.isFailure) {
+            _projectError.value = selection.exceptionOrNull()?.message
+            return
+        }
         _currentChatId.value = chatId
         _messages.value = chatRepo.getMessages(chatId)
         val docs = ragManager.documentsForChat(chatId)
@@ -615,6 +638,7 @@ class HomeViewModel @Inject constructor(
 
     fun deleteChat(chatId: String) {
         chatRepo.deleteChat(chatId)
+        laptop.core.unbindConversation(chatId).onFailure { _projectError.value = it.message }
         if (_currentChatId.value == chatId) createNewChat()
     }
 
@@ -698,7 +722,7 @@ class HomeViewModel @Inject constructor(
 
         val isFirstTurn = chatRepo.getMessages(chatId).count { it.role == ROLE_USER } == 1
 
-        if (InferenceClient.isModelLoaded.value) {
+        if (InferenceClient.isModelLoaded.value && (modelSession.loadState.value as? ModelLoadState.Active)?.modelId == active.id) {
             runGeneration(chatId, isFirstTurn, trimmed)
         } else {
             viewModelScope.launch {
@@ -726,6 +750,7 @@ class HomeViewModel @Inject constructor(
 
     private fun startWebSearch(active: ModelInfo, userQuery: String) {
         if (webSearchActive.value) return
+        val loadId = runCatching { modelSession.requireLoadId() }.getOrElse { _projectError.value = it.message; return }
         val chatId = ensureChat(active)
         val isFirstTurn = chatRepo.getMessages(chatId).count { it.role == ROLE_USER } == 1
         val userMessage = ChatMessage(
@@ -757,6 +782,7 @@ class HomeViewModel @Inject constructor(
         val runId = webSearchCoordinator.start(
             scope = viewModelScope,
             userQuery = userQuery,
+            loadId = loadId,
         )
         webSearchMessages[runId] = chatId to cardMessageId
 
@@ -803,6 +829,13 @@ class HomeViewModel @Inject constructor(
         if (_isGenerating.value) return
         val sourceChatId = _currentChatId.value ?: return
         val newChat = chatRepo.forkChat(sourceChatId, messageId) ?: return
+        laptop.core.projectForConversation(sourceChatId)?.let { project ->
+            val binding = laptop.core.bindConversation(project.id, newChat.id)
+            if (binding.isFailure) {
+                _projectError.value = "Fork saved, but project binding failed: ${binding.exceptionOrNull()?.message}"
+                return
+            }
+        }
         selectChat(newChat.id)
     }
 
@@ -888,7 +921,7 @@ class HomeViewModel @Inject constructor(
                 // service signals Done/Error. callbackFlow never closes
                 // itself, so a plain collect would hang here and we'd
                 // never archive + insert the summary card downstream.
-                InferenceClient.compactConversation(messagesJson, maxSummaryTokens)
+                InferenceClient.compactConversation(messagesJson, maxSummaryTokens, modelSession.requireLoadId())
                     .transformWhile { event ->
                         emit(event)
                         event !is InferenceEvent.Done && event !is InferenceEvent.Error
@@ -1000,17 +1033,18 @@ class HomeViewModel @Inject constructor(
         _loadModelWindow.value = false
 
         val thinkingOn = _thinkingEnabled.value && modelSession.supportsThinking.value
-        modelSession.setThinkingEnabled(thinkingOn)
-        toolCallCoordinator.configureInference(
-            webOn = _webSearchEnabled.value,
-            userSystemPrompt = modelSession.userSystemPrompt.value,
-        )
 
         generationJob = viewModelScope.launch {
             var outcome: GenerationOutcome? = null
             var fallbackError: String? = null
             var wasStopped = false
             try {
+        toolCallCoordinator.configureInference(
+            webOn = _webSearchEnabled.value,
+            userSystemPrompt = modelSession.userSystemPrompt.value,
+            thinking = thinkingOn,
+        )
+
                 outcome = inferenceCoordinator.run(
                     chatId = chatId,
                     onStreamingUpdate = { content, thinking ->
@@ -1053,6 +1087,9 @@ class HomeViewModel @Inject constructor(
         if (existing != null) return existing
         val chat = chatRepo.createChat(active.id, active.name)
         _currentChatId.value = chat.id
+        laptop.core.activeWorkspace()?.let { project ->
+            laptop.core.bindConversation(project.id, chat.id).onFailure { _projectError.value = it.message }
+        }
         return chat.id
     }
 

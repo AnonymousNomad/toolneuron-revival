@@ -12,6 +12,8 @@ import com.dark.tool_neuron.repo.ModelRepository
 import com.dark.tool_neuron.service.inference.InferenceClient
 import com.dark.tool_neuron.service.inference.InferenceEvent
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +33,7 @@ class ResidentEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val laptop: LaptopManager,
     private val modelRepo: ModelRepository,
+    private val assignmentInspector: com.dark.tool_neuron.laptop.CipherAssignmentInspector,
 ) {
     sealed class ResidentUiState {
         data object Idle : ResidentUiState()
@@ -68,10 +71,13 @@ class ResidentEngine @Inject constructor(
         var turns: Int,
         var lookups: Int,
         var previousIntent: IntentEnvelope?,
+        val workspaceId: String? = null,
+        val loadId: String? = null,
         val recentExchanges: ArrayDeque<Pair<String, String>> = ArrayDeque(),
     )
 
     private var session: Session? = null
+    private val lifecycleMutex = Mutex()
 
     @Volatile private var dossierCache: List<ModelRegistry.ModelDossier> = emptyList()
 
@@ -88,31 +94,34 @@ class ResidentEngine @Inject constructor(
         runCatching { laptop.core.recoverResidentOnBoot() }
     }
 
-    suspend fun start(contextSize: Int = 4096): ResidentUiState {
+    suspend fun start(contextSize: Int = 4096): ResidentUiState = lifecycleMutex.withLock { startAssigned() }
+
+    private suspend fun startAssigned(): ResidentUiState {
         if (_state.value is ResidentUiState.Active) return _state.value
         _state.value = ResidentUiState.Starting
 
-        val memAvail = readMemAvailableBytes()
-        val selection = ResidentSelector.select(modelRepo.models.value, memAvail)
-        if (selection is ResidentModelSelection.Unavailable) {
-            _state.value = ResidentUiState.Unavailable(selection.reason)
+        val inspection = assignmentInspector.inspect()
+        if (inspection.assessment.status != com.dark.tool_neuron.laptop.CipherSlotStatus.READY) {
+            _state.value = ResidentUiState.Unavailable(inspection.assessment.reason)
             return _state.value
         }
-        val chosen = selection as ResidentModelSelection.Selected
-        val model = chosen.model
-
-        val dossier = laptop.modelDossiers(listOf(model)).firstOrNull()
-            ?: ModelRegistry.dossier(model, null, null)
-        val identity = buildIdentity(model, dossier, chosen.reason, contextSize)
-
-        val configJson = ResidentLoadConfig.jsonFor(contextSize)
+        val assignment = inspection.assignment!!
+        val model = inspection.model!!
+        val dossier = laptop.modelDossiers(listOf(model)).firstOrNull() ?: ModelRegistry.dossier(model, null, null)
+        val identity = buildIdentity(model, dossier, "explicit qualified Cipher assignment", assignment.contextSize)
+            .copy(runtime = com.dark.tool_neuron.laptop.CipherRuntimeIdentity.revision(assignment.runtimeId, assignment.contextSize))
+        if (identity.artifactSha256 != assignment.artifactSha256) {
+            _state.value = ResidentUiState.Unavailable("Assigned artifact changed during load preparation")
+            return _state.value
+        }
+        val configJson = com.dark.tool_neuron.laptop.CipherRuntimeIdentity.config(assignment)
         val load = when (model.pathType) {
             PathType.FILE -> InferenceClient.loadModel(model.path, configJson)
             PathType.CONTENT_URI -> InferenceClient.loadModelFromUri(context, Uri.parse(model.path), configJson)
         }
         if (load.isFailure) {
             val reason = "resident model failed to load: ${load.exceptionOrNull()?.message}"
-            laptop.core.startResidentSession(identity, laptop.core.activeWorkspace()?.id, null)
+            laptop.core.startResidentSession(identity, laptop.core.activeWorkspace()?.id, null, expectedAssignment = assignment)
                 .onSuccess { rec ->
                     laptop.core.endResidentSession(rec.id, ResidentSessionStatus.FAILED, reason)
                 }
@@ -120,12 +129,18 @@ class ResidentEngine @Inject constructor(
             return _state.value
         }
 
+        val loadId = runCatching { JSONObject(load.getOrThrow()).getString("loadId").takeIf { it.isNotBlank() && it != "null" } }.getOrNull()
+        if (loadId == null) {
+            _state.value = ResidentUiState.Unavailable("Runtime did not return a loaded model identity")
+            return _state.value
+        }
         val ws = laptop.core.activeWorkspace()
-        val record = laptop.core.startResidentSession(identity, ws?.id, null).getOrElse {
+        val record = laptop.core.startResidentSession(identity, ws?.id, null, expectedAssignment = assignment).getOrElse {
+            runCatching { InferenceClient.unloadModelForLoad(loadId) }
             _state.value = ResidentUiState.Unavailable("could not persist resident session: ${it.message}")
             return _state.value
         }
-        session = Session(record.id, identity, model, 0, 0, null)
+        session = Session(record.id, identity, model, 0, 0, null, ws?.id, loadId)
         _messages.value = emptyList()
         _streaming.value = ""
         dossierCache = laptop.modelDossiers(modelRepo.models.value)
@@ -138,15 +153,19 @@ class ResidentEngine @Inject constructor(
             appendMessage(Message("system", "Resident is not active. Start it first.", null, null, emptyList(), 0))
             return
         }
+        if (s.workspaceId != laptop.core.state.value.activeWorkspaceId) {
+            appendMessage(Message("system", "Project changed. Stop and restart Cipher to use the selected project without prior project context.", null, null, emptyList(), 0))
+            return
+        }
         val text = userText.trim().take(1500)
         if (text.isEmpty()) return
         appendMessage(Message("user", text, null, null, emptyList(), 0))
 
         dossierCache = laptop.modelDossiers(modelRepo.models.value)
-        val ctx = buildTurnContext()
+        val ctx = buildTurnContext(s.workspaceId)
 
         val turn1 = ResidentContext.buildTurn(text, ctx, emptyList(), s.previousIntent, s.recentExchanges.toList(), finalTurn = false)
-        val r1 = generateText(turn1.system, turn1.user, MAX_NEW_TOKENS)
+        val r1 = generateText(turn1.system, turn1.user, MAX_NEW_TOKENS, s.loadId)
         if (r1.isFailure) {
             val msg = if (cancelRequested) "generation cancelled by user"
             else "resident generation failed: ${r1.exceptionOrNull()?.message}"
@@ -169,7 +188,7 @@ class ResidentEngine @Inject constructor(
         val lookupResults = mutableListOf<LaptopLookupResult>()
         requested.forEach { (kind, query) ->
             val q = query.ifBlank { if (kind == LookupKind.WORKSPACE_READ) "" else text }
-            lookupResults += lookupService.execute(LaptopLookupRequest(kind, query = q))
+            lookupResults += lookupService.execute(LaptopLookupRequest(kind, query = q), s.workspaceId)
             s.lookups++
         }
 
@@ -180,7 +199,7 @@ class ResidentEngine @Inject constructor(
         if (requested.isNotEmpty()) {
             val turn2 = ResidentContext.buildTurn(text, ctx, lookupResults, s.previousIntent, s.recentExchanges.toList(), finalTurn = true)
             tokens += turn2.approxTokens
-            val r2 = generateText(turn2.system, turn2.user, MAX_NEW_TOKENS)
+            val r2 = generateText(turn2.system, turn2.user, MAX_NEW_TOKENS, s.loadId)
             if (r2.isFailure) {
                 val msg = if (cancelRequested) "generation cancelled by user"
                 else "resident generation failed: ${r2.exceptionOrNull()?.message}"
@@ -247,12 +266,14 @@ class ResidentEngine @Inject constructor(
 
     fun cancelGeneration() {
         cancelRequested = true
-        runCatching { InferenceClient.stopGeneration() }
+        session?.loadId?.let { runCatching { InferenceClient.stopGenerationForLoad(it) } }
     }
 
-    suspend fun stop() {
+    suspend fun stop() = lifecycleMutex.withLock { stopAssigned() }
+
+    private suspend fun stopAssigned() {
         val s = session ?: return
-        runCatching { InferenceClient.unloadModel() }
+        s.loadId?.let { runCatching { InferenceClient.unloadModelForLoad(it) } }
         laptop.core.endResidentSession(s.id, ResidentSessionStatus.ENDED_BY_USER)
         session = null
         _streaming.value = ""
@@ -263,7 +284,7 @@ class ResidentEngine @Inject constructor(
         _messages.value = (_messages.value + message).takeLast(MAX_TRANSCRIPT)
     }
 
-    private suspend fun generateText(system: String, user: String, maxTokens: Int): Result<String> =
+    private suspend fun generateText(system: String, user: String, maxTokens: Int, loadId: String?): Result<String> =
         withContext(Dispatchers.IO) {
             _streaming.value = ""
             cancelRequested = false
@@ -273,7 +294,7 @@ class ResidentEngine @Inject constructor(
             val sb = StringBuilder()
             try {
                 withTimeout(GENERATE_TIMEOUT_MS) {
-                    InferenceClient.generateMultiTurn(arr.toString(), maxTokens).collect { ev ->
+                    InferenceClient.generateMultiTurn(arr.toString(), maxTokens, loadId).collect { ev ->
                         when (ev) {
                             is InferenceEvent.Token -> {
                                 sb.append(ev.text)
@@ -314,22 +335,22 @@ class ResidentEngine @Inject constructor(
                 artifactSha256 = sha,
                 hashUnavailableReason = hashReason,
                 admission = dossier.admissions.map { it.name }.sorted(),
-                contextTemplateIdentity = "engine-chat-template (gguf_lib managed) · arch=${dossier.architecture ?: "unknown"}",
+                contextTemplateIdentity = "cipher-greedy-chatml/1 · fixed ChatML template",
                 contextProfile = "ctx-$contextSize",
                 selectionReason = selectionReason,
                 boundAtMs = System.currentTimeMillis(),
             )
         }
 
-    private fun buildTurnContext(): ResidentContext.TurnContext {
-        val ws = laptop.core.activeWorkspace()
+    private fun buildTurnContext(workspaceId: String?): ResidentContext.TurnContext {
+        val ws = laptop.core.state.value.workspaces.firstOrNull { it.id == workspaceId }
         val files = ws?.let {
-            laptop.core.listWorkspaceFiles().getOrDefault(emptyList()).take(30).map { e -> e.path }
+            laptop.listWorkspaceEntries(it.id).take(30).map { e -> e.path }
         } ?: emptyList()
         val wsSummary = ws?.let {
             "active workspace: ${it.name} (${it.id}); files: ${files.joinToString(", ").ifEmpty { "(none)" }}"
         }
-        val task = laptop.core.state.value.tasks.maxByOrNull { it.updatedAtMs }
+        val task = laptop.core.state.value.tasks.filter { it.workspaceId == workspaceId }.maxByOrNull { it.updatedAtMs }
         val taskSummary = task?.let { "latest task: ${it.id} [${it.status}] ${it.userObjective.take(160)}" }
         val caps = CapabilityRegistry.SEED.map { cap ->
             "${CapabilityRegistry.ref(cap)} — ${cap.description.take(120)}"

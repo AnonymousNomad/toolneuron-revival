@@ -1,6 +1,5 @@
 package com.dark.tool_neuron.ui.screens.setup_screen
 
-import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,6 +51,8 @@ import com.dark.tool_neuron.ui.theme.LocalDimens
 import com.dark.tool_neuron.ui.theme.LocalTnShapes
 import com.dark.tool_neuron.ui.theme.Motion
 import com.dark.tool_neuron.viewmodel.ModelStoreViewModel
+import com.dark.tool_neuron.viewmodel.LocalImportProgress
+import com.dark.download_manager.formatBytes
 import kotlinx.coroutines.delay
 
 private enum class SetupPath(val label: String) {
@@ -92,36 +93,16 @@ fun ModelSetupScreen(
     innerPadding: PaddingValues,
     onPackSelected: (packId: String) -> Unit,
     onOpenStore: () -> Unit,
-    onLocalImport: (uri: Uri, name: String, size: Long, type: ProviderType) -> Unit,
+    hasInstalledModels: Boolean = false,
     onSkip: () -> Unit,
+    localImport: LocalImportProgress? = null,
 ) {
     val dimens = LocalDimens.current
     val context = LocalContext.current
     var visible by remember { mutableStateOf(false) }
     var selectedPath by remember { mutableStateOf(SetupPath.Packs) }
     var selectedPack by remember { mutableStateOf<String?>(null) }
-    var pendingImport by remember { mutableStateOf<Triple<Uri, String, Long>?>(null) }
-
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }
-            var name = "model.gguf"
-            var size = 0L
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (nameIdx >= 0) name = cursor.getString(nameIdx)
-                    if (sizeIdx >= 0) size = cursor.getLong(sizeIdx)
-                }
-            }
-            pendingImport = Triple(uri, name, size)
-        }
-    }
+    val pickModel = com.dark.tool_neuron.ui.screens.system_ui.LocalModelImportPicker.current
 
     LaunchedEffect(Unit) { delay(80); visible = true }
 
@@ -140,6 +121,14 @@ fun ModelSetupScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Spacer(Modifier.weight(1f))
+
+            localImport?.let { progress ->
+                Text(
+                    text = progress.error ?: "Copying ${progress.fileName}: ${formatBytes(progress.copiedBytes)}",
+                    color = if (progress.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                if (progress.error != null) Text("Choose the file again to retry, or skip for now.")
+            }
 
             AnimatedVisibility(
                 visible = visible,
@@ -196,7 +185,7 @@ fun ModelSetupScreen(
 
                         SetupPath.Custom -> CustomSection(
                             onOpenStore = onOpenStore,
-                            onPickFile = { filePicker.launch(arrayOf("application/octet-stream", "*/*")) },
+                            onPickFile = { pickModel() },
                         )
                     }
                 }
@@ -209,7 +198,7 @@ fun ModelSetupScreen(
                 enter = fadeIn(Motion.entrance()) + slideInVertically(Motion.entrance()) { it / 2 }
             ) {
                 Text(
-                    text = "Skip for now",
+                    text = if (hasInstalledModels) "Continue setup" else "Skip for now",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -222,16 +211,7 @@ fun ModelSetupScreen(
         }
     }
 
-    pendingImport?.let { (uri, name, size) ->
-        ModelImportTypePicker(
-            fileName = name,
-            onPick = { type ->
-                onLocalImport(uri, name, size, type)
-                pendingImport = null
-            },
-            onDismiss = { pendingImport = null },
-        )
-    }
+
 }
 
 @Composable

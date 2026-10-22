@@ -134,7 +134,7 @@ fun SetupCipherScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RetroButton(label = "Finish → Desktop", onClick = onComplete)
+            RetroButton(label = "Continue to abilities", onClick = onComplete)
             }
             Spacer(Modifier.height(12.dp))
         }

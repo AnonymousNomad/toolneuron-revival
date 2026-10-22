@@ -12,13 +12,22 @@ interface IInferenceService {
     void loadModel(String modelPath, String configJson, IModelLoadCallback callback);
     void loadModelFromFd(in ParcelFileDescriptor pfd, String configJson, IModelLoadCallback callback);
     void unloadModel();
+    boolean unloadModelForLoad(String loadId);
     boolean isModelLoaded();
     String getModelInfo();
 
     // Generation
     void generate(String prompt, int maxTokens, IGenerationCallback callback);
+    void generateForLoad(String prompt, int maxTokens, String loadId, IGenerationCallback callback);
     void generateMultiTurn(String messagesJson, int maxTokens, IGenerationCallback callback);
+    void generateMultiTurnForLoad(String messagesJson, int maxTokens, String loadId, IGenerationCallback callback);
     void stopGeneration();
+    void stopGenerationForLoad(String loadId);
+    boolean precomputeVlmVisionForLoad(in ParcelFileDescriptor pfd, int imageQuality, String loadId);
+    String configureChatForLoad(String loadId, String prompt, boolean thinking);
+    String loadVlmProjectorForLoad(String loadId, String path, int threads);
+    void generateVlmForLoad(String messagesJson, in ParcelFileDescriptor[] imageFds, int maxTokens, int imageQuality, String loadId, IGenerationCallback callback);
+    void compactConversationForLoad(String messagesJson, int maxTokens, String loadId, IGenerationCallback callback);
 
     // Summarize the conversation, drop the in-context KV cache, and emit the
     // summary text via the callback (same event vocabulary as generateMultiTurn).

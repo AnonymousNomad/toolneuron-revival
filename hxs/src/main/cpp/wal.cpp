@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cerrno>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -148,18 +149,18 @@ bool WAL::load_from_disk() {
     next_seq_ = 1;
 
     int fd = ::open(path_.c_str(), O_RDONLY);
-    if (fd < 0) return true; // no WAL file = clean state
+    if (fd < 0) return errno == ENOENT;
 
     struct stat st;
-    if (fstat(fd, &st) != 0 || st.st_size == 0) {
+    if (fstat(fd, &st) != 0 || st.st_size < 0 || st.st_size > 512LL * 1024 * 1024) {
         ::close(fd);
-        return true;
+        return false;
     }
 
     std::vector<uint8_t> buf(static_cast<size_t>(st.st_size));
     ssize_t n = ::read(fd, buf.data(), buf.size());
     ::close(fd);
-    if (n <= 0) return true;
+    if (n < 0 || static_cast<size_t>(n) != buf.size()) return false;
 
     const uint8_t* p = buf.data();
     const uint8_t* end = buf.data() + n;
@@ -167,7 +168,7 @@ bool WAL::load_from_disk() {
     while (p < end) {
         WalEntry e;
         size_t consumed = 0;
-        if (!deserialize_entry(p, static_cast<size_t>(end - p), e, consumed)) break;
+        if (!deserialize_entry(p, static_cast<size_t>(end - p), e, consumed) || consumed == 0) return false;
         if (e.sequence >= next_seq_) next_seq_ = e.sequence + 1;
         entries_.push_back(std::move(e));
         p += consumed;

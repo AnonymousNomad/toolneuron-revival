@@ -15,7 +15,7 @@ class LaptopCore(
     val state: StateFlow<CipherLaptop> = _state.asStateFlow()
 
     private fun loadInitial(): CipherLaptop {
-        val raw = runCatching { persistence.load() }.getOrNull()
+        val raw = persistence.load()
         if (raw == null) {
             val fresh = seedFresh()
             persist(fresh)
@@ -29,7 +29,7 @@ class LaptopCore(
             persist(bumped)
             bumped
         } catch (e: LaptopStateError) {
-            runCatching { persistence.quarantineCorrupt(raw) }
+            persistence.quarantineCorrupt(raw)
             val recovered = seedFresh().copy(
                 session = SessionState(
                     createdAtMs = nowMs(),
@@ -55,29 +55,141 @@ class LaptopCore(
         persistence.save(LaptopCodec.encode(state))
     }
 
+    @Synchronized
     private fun mutate(block: (CipherLaptop) -> CipherLaptop): CipherLaptop {
         val next = block(_state.value)
         LaptopCodec.validate(next)
-        _state.value = next
         persist(next)
+        _state.value = next
         return next
     }
 
     private fun shortId(prefix: String): String =
         "$prefix-" + UUID.randomUUID().toString().replace("-", "").take(10)
 
+    private fun updateWorkstation(update: (WorkstationSession) -> WorkstationSession): Result<Unit> = runCatching {
+        mutate { it.copy(workstation = update(it.workstation)) }
+        Unit
+    }
+
+    fun openWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.open(app) }
+
+    fun minimizeWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.minimize(app) }
+
+    fun closeWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.close(app) }
+
+    fun recordQualificationRun(run: ModelLabRun): Result<Unit> = runCatching {
+        val definition = run.validate()
+        val evidence = definition.checks.map { check ->
+            val observation = run.observations.firstOrNull { it.checkId == check.id }
+            EvidenceRecord(shortId("ev"), null, EvidenceKind.CHECK,
+                if (observation == null) "Model Lab ${run.id}/${check.id}: UNKNOWN; run started, no completed observation yet"
+                else "Model Lab ${run.id}/${check.id}: ${observation.verdict}; completed=${observation.completed}; ${observation.error ?: observation.output.take(800)}",
+                listOf("model-lab:${run.id}", "check:${check.id}"), createdAtMs = run.finishedAtMs ?: run.startedAtMs)
+        }
+        val record = QualificationRecord(run.scope, run.batteryId, definition.checks.mapIndexed { index, check ->
+            val observed = run.observations.firstOrNull { it.checkId == check.id }
+            QualificationCheck(check.id, observed?.verdict ?: QualificationVerdict.UNKNOWN, listOf(evidence[index].id), observed?.measurements)
+        }, run.finishedAtMs ?: run.startedAtMs)
+        mutate { state ->
+            check(state.permissions.any { it.capabilityId == "model.worker.delegate@1" && it.granted }) { "Grant local model invocation in Abilities first" }
+            check(state.resident.activeSessionId == null) { "Stop Cipher before qualification" }
+            state.modelLabRuns.firstOrNull { it.id == run.id }?.let { previous ->
+                require(previous.scope == run.scope && previous.batteryId == run.batteryId && previous.startedAtMs == run.startedAtMs && previous.finishedAtMs == null) { "Run identity already completed or changed" }
+            }
+            val keptRuns = (state.modelLabRuns.filterNot { it.id == run.id } + run).takeLast(100)
+            val keptRunRefs = keptRuns.map { "model-lab:${it.id}" }.toSet()
+            val keptEvidenceIds = (state.evidence + evidence).filter { item -> item.refs.any { it in keptRunRefs } }.map { it.id }.toSet()
+            state.copy(modelLabRuns = keptRuns,
+                qualifications = (state.qualifications + record).filter { qualification ->
+                    qualification.checks.all { check -> check.evidenceRefs.any { it in keptEvidenceIds } }
+                }.takeLast(400), evidence = state.evidence + evidence)
+        }
+        Unit
+    }
+
+    fun assignCipher(assignment: CipherAssignment?): Result<Unit> = runCatching {
+        mutate {
+            check(it.resident.activeSessionId == null) { "Stop Cipher before changing its assignment" }
+            it.copy(cipherAssignment = assignment)
+        }
+        Unit
+    }
+
+    fun showWorkstationDesktop(): Result<Unit> = updateWorkstation { it.desktop() }
+
     data class WorkspaceEntry(val path: String, val isDir: Boolean, val bytes: Long)
 
-    fun createWorkspace(name: String): Result<WorkspaceRef> = runCatching {
+    fun createWorkspace(
+        name: String,
+        metadata: Map<String, String> = emptyMap(),
+        initialFiles: Map<String, String> = emptyMap(),
+        creation: com.dark.tool_neuron.creation.CreationPlan? = null,
+    ): Result<WorkspaceRef> = runCatching {
         val clean = name.trim()
         require(clean.isNotEmpty() && clean.length <= 64) { "workspace name must be 1..64 characters" }
         val id = shortId("ws")
         val dir = File(workspacesBaseDir, id)
         if (!dir.mkdirs()) throw IllegalStateException("could not create workspace directory")
-        File(dir, "README.md").writeText("# $clean\n\nToolNeuron workspace (Cipher's Laptop P0).\n")
-        val ref = WorkspaceRef(id = id, name = clean, createdAtMs = nowMs(), metadata = mapOf("created_by" to "user"))
-        mutate { it.copy(workspaces = it.workspaces + ref, activeWorkspaceId = id) }
-        ref
+        try {
+            File(dir, "README.md").writeText("# $clean\n\nToolNeuron workspace.\n")
+            initialFiles.forEach { (path, text) ->
+                require(!File(path).isAbsolute)
+                val target = File(dir, path).canonicalFile
+                require(target.toPath().startsWith(dir.canonicalFile.toPath()) && target != dir.canonicalFile)
+                check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
+                target.writeText(text)
+            }
+            val ref = WorkspaceRef(id, clean, nowMs(), metadata + ("created_by" to "user"), creation = creation)
+            mutate {
+                if (creation != null) check(it.permissions.any { grant -> grant.capabilityId == com.dark.tool_neuron.creation.CreationPlan.CAPABILITY && grant.granted }) { "Creator planning permission denied" }
+                it.copy(workspaces = it.workspaces + ref, activeWorkspaceId = id)
+            }
+            ref
+        } catch (failure: Throwable) {
+            dir.deleteRecursively()
+            throw failure
+        }
+    }
+
+    fun addMediaReference(workspaceId: String, title: String, locator: String, classification: com.dark.tool_neuron.companion.MediaSourceClass, rights: String): Result<Unit> = runCatching {
+        mutate { state ->
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.companion.CompanionPlan.CAPABILITY && it.granted }) { "Companion planning permission denied" }
+            val workspace = state.workspaces.singleOrNull { it.id == workspaceId } ?: error("Unknown project")
+            val plan = workspace.companion ?: com.dark.tool_neuron.companion.CompanionPlan()
+            val updated = plan.copy(media = plan.media + com.dark.tool_neuron.companion.MediaReference(shortId("media"), title.trim(), locator.trim(), classification, rights.trim())).also { it.validate() }
+            state.copy(workspaces = state.workspaces.map { if (it.id == workspaceId) it.copy(companion = updated) else it })
+        }
+        Unit
+    }
+
+    fun updateCreationPlan(workspaceId: String, edit: (com.dark.tool_neuron.creation.CreationPlan) -> com.dark.tool_neuron.creation.CreationPlan): Result<com.dark.tool_neuron.creation.CreationPlan> = runCatching {
+        val next = mutate { state ->
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.creation.CreationPlan.CAPABILITY && it.granted }) { "Creator planning permission denied" }
+            val workspace = state.workspaces.singleOrNull { it.id == workspaceId } ?: error("Unknown project")
+            val plan = workspace.creation ?: error("Not a creation project")
+            val updated = edit(plan).also { it.validate() }
+            state.copy(workspaces = state.workspaces.map { if (it.id == workspaceId) it.copy(creation = updated) else it })
+        }
+        next.workspaces.single { it.id == workspaceId }.creation!!
+    }
+
+    fun recordVibeBuild(record: com.dark.tool_neuron.studio.VibeBuildRecord): Result<com.dark.tool_neuron.studio.VibeBuildRecord> = runCatching {
+        check(hasPermission(com.dark.tool_neuron.studio.VibeStudio.CAPABILITY)) { "Vibe Studio permission denied" }
+        val evidence = EvidenceRecord(shortId("ev"), null, EvidenceKind.CHECK,
+            "Static bundle ${record.id}: ${record.verdict}; structural checks only, browser behavior not tested",
+            listOf("workspace:${record.workspaceId}", "vibe-build:${record.id}"), record.digest, nowMs())
+        val saved = record.copy(evidenceId = evidence.id)
+        val verification = VerificationRecord(shortId("vr"), null, "Build static web bundle ${record.id}",
+            "entrypoint and local asset checks pass", "deterministic snapshot checks (not browser/device acceptance)",
+            evidence.id, record.verdict, nowMs())
+        mutate { state ->
+            require(state.workspaces.any { it.id == record.workspaceId }) { "Unknown workspace" }
+            require(state.vibeBuilds.none { it.id == record.id }) { "Duplicate build id" }
+            state.copy(vibeBuilds = state.vibeBuilds + saved, evidence = state.evidence + evidence,
+                verifications = state.verifications + verification)
+        }
+        saved
     }
 
     fun openWorkspace(id: String): Result<Unit> = runCatching {
@@ -86,12 +198,66 @@ class LaptopCore(
         Unit
     }
 
+    fun saveVibeDraft(workspaceId: String, draft: com.dark.tool_neuron.studio.VibeDraft?, stillCurrent: () -> Boolean = { true }): Result<Unit> = runCatching {
+        draft?.validate()
+        mutate { state ->
+            check(stillCurrent()) { "Draft superseded" }
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.studio.VibeStudio.CAPABILITY && it.granted }) { "Vibe permission denied" }
+            require(state.workspaces.any { it.id == workspaceId }) { "Unknown project" }
+            val updated = state.workspaces.map { if (it.id == workspaceId) it.copy(vibeDraft = draft) else it }
+            require(updated.sumOf { it.vibeDraft?.text?.length ?: 0 } <= 2_000_000) { "Draft storage is full; save or discard another project draft" }
+            state.copy(workspaces = updated)
+        }
+        Unit
+    }
+
+    fun rememberVibeSource(workspaceId: String, path: String): Result<Unit> = runCatching {
+        require(path.length in 1..160 && path.matches(Regex("[A-Za-z0-9_./-]+")) && !path.startsWith('/') &&
+            path.split('/').all { it.isNotEmpty() && !it.startsWith('.') }) { "Invalid source resume path" }
+        mutate { state ->
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.studio.VibeStudio.CAPABILITY && it.granted }) { "Vibe Studio permission denied" }
+            require(state.workspaces.any { it.id == workspaceId }) { "Unknown workspace" }
+            state.copy(activeWorkspaceId = workspaceId, workspaces = state.workspaces.map { workspace ->
+                if (workspace.id != workspaceId) workspace else workspace.copy(metadata = workspace.metadata +
+                    mapOf("vibe.lastSource" to path, "vibe.lastOpenedAt" to nowMs().toString()))
+            })
+        }
+        Unit
+    }
+
+    fun bindConversation(workspaceId: String, conversationId: String): Result<Unit> = runCatching {
+        require(conversationId.isNotBlank() && conversationId.length <= 256) { "Invalid conversation id" }
+        mutate { state ->
+            require(state.workspaces.any { it.id == workspaceId }) { "Unknown workspace" }
+            state.copy(activeWorkspaceId = workspaceId, workspaces = state.workspaces.map { workspace ->
+                val remaining = workspace.conversationIds.filterNot { it == conversationId }
+                workspace.copy(conversationIds = if (workspace.id == workspaceId) remaining + conversationId else remaining)
+            })
+        }
+        Unit
+    }
+
+    fun projectForConversation(conversationId: String): WorkspaceRef? =
+        _state.value.workspaces.firstOrNull { conversationId in it.conversationIds }
+
+    fun unbindConversation(conversationId: String, clearSelection: Boolean = false): Result<Unit> = runCatching {
+        mutate { state -> state.copy(activeWorkspaceId = if (clearSelection) null else state.activeWorkspaceId, workspaces = state.workspaces.map {
+            it.copy(conversationIds = it.conversationIds.filterNot { id -> id == conversationId })
+        }) }
+        Unit
+    }
+
+    fun clearActiveWorkspace(): Result<Unit> = runCatching {
+        mutate { it.copy(activeWorkspaceId = null) }
+        Unit
+    }
+
     fun activeWorkspace(): WorkspaceRef? =
         _state.value.activeWorkspaceId?.let { id -> _state.value.workspaces.firstOrNull { it.id == id } }
 
     fun listWorkspaceFiles(): Result<List<WorkspaceEntry>> = runCatching {
         val ws = activeWorkspace() ?: throw IllegalStateException("no active workspace")
-        val root = File(workspacesBaseDir, ws.id)
+        val root = com.dark.tool_neuron.util.WorkspacePaths.root(workspacesBaseDir, ws.id, _state.value.workspaces.map { it.id }.toSet())
         val out = mutableListOf<WorkspaceEntry>()
         walk(root, root, "", 0, out)
         out.sortBy { it.path }
@@ -102,6 +268,7 @@ class LaptopCore(
         if (depth > 3 || out.size >= MAX_FILE_ENTRIES) return
         val children = dir.listFiles()?.sortedBy { it.name } ?: return
         for (f in children) {
+            if (!com.dark.tool_neuron.util.WorkspacePaths.unaliased(f)) continue
             if (out.size >= MAX_FILE_ENTRIES) return
             val childRel = if (rel.isEmpty()) f.name else "$rel/${f.name}"
             out += WorkspaceEntry(childRel, f.isDirectory, if (f.isFile) f.length() else 0L)
@@ -125,8 +292,12 @@ class LaptopCore(
             createdAtMs = now,
             updatedAtMs = now,
         )
-        mutate { it.copy(tasks = it.tasks + task) }
-        task
+        var saved = task
+        mutate {
+            saved = task.copy(workspaceId = it.activeWorkspaceId)
+            it.copy(tasks = it.tasks + saved)
+        }
+        saved
     }
 
     fun nextStatus(status: TaskStatus): TaskStatus? = when (status) {
@@ -241,7 +412,7 @@ class LaptopCore(
     fun hasPermission(capabilityRef: String): Boolean =
         _state.value.permissions.firstOrNull { it.capabilityId == capabilityRef }?.granted ?: false
 
-    fun startResidentSession(identity: com.dark.tool_neuron.laptop.resident.ResidentIdentity, workspaceId: String?, taskId: String?): Result<com.dark.tool_neuron.laptop.resident.ResidentSessionRecord> = runCatching {
+    fun startResidentSession(identity: com.dark.tool_neuron.laptop.resident.ResidentIdentity, workspaceId: String?, taskId: String?, expectedAssignment: CipherAssignment? = null): Result<com.dark.tool_neuron.laptop.resident.ResidentSessionRecord> = runCatching {
         val now = nowMs()
         val record = com.dark.tool_neuron.laptop.resident.ResidentSessionRecord(
             id = shortId("rs"),
@@ -255,6 +426,7 @@ class LaptopCore(
             updatedAtMs = now,
         )
         mutate { s ->
+            if (expectedAssignment != null) check(s.cipherAssignment == expectedAssignment && s.resident.activeSessionId == null) { "Cipher assignment changed or another session started" }
             val kept = (s.resident.sessions.filter { it.status != com.dark.tool_neuron.laptop.resident.ResidentSessionStatus.ACTIVE } + record).takeLast(MAX_RESIDENT_SESSIONS)
             s.copy(resident = s.resident.copy(sessions = kept, activeSessionId = record.id))
         }

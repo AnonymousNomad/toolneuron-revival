@@ -32,10 +32,17 @@ class ScaffoldViewModel @Inject constructor(
     private val security: SecurityManager,
     private val rootGuard: RootGuard,
     private val accessibilityGuard: AccessibilityGuard,
-    session: SessionHolder,
+    private val session: SessionHolder,
     serverController: ServerController,
     installProgress: InstallProgressTracker,
 ) : ViewModel() {
+
+    private fun entryProgress() = com.dark.tool_neuron.model.WorkstationEntryPolicy(
+        prefs.tcAccepted, prefs.onboardingComplete, prefs.securitySetupDone, prefs.modelSetupDone,
+    )
+    private val _workstationReady = MutableStateFlow(entryProgress().workstationReady)
+    val workstationReady = _workstationReady.asStateFlow()
+    fun refreshWorkstationReadiness(): Boolean = entryProgress().workstationReady.also { _workstationReady.value = it }
 
     val serverRunning: StateFlow<Boolean> = serverController.state
         .map {
@@ -110,28 +117,22 @@ class ScaffoldViewModel @Inject constructor(
         _rootWarning.value = null
     }
 
-    fun resolveStartDestination(): String {
-        val tcAccepted = prefs.tcAccepted
-        val onboarded = prefs.onboardingComplete
-        val secDone = prefs.securitySetupDone
-        val modelDone = prefs.modelSetupDone
-        if (!tcAccepted) return NavScreens.TermsConditions.route
-        if (!onboarded) return NavScreens.DevNotes.route
-        if (!secDone) return NavScreens.SetupScreen.route
-        if (!modelDone) return NavScreens.ModelSetup.route
-        if (security.isLockEnabled) return NavScreens.PasswordScreen.route
-        return NavScreens.Desktop.route
-    }
+    fun resolveStartDestination(): String = entryProgress().destination(
+        requiresUnlock = security.isLockEnabled && !session.active.value,
+    )
 
     fun markOnboardingComplete() {
         prefs.onboardingComplete = true
+        refreshWorkstationReadiness()
     }
 
     fun markTermsAccepted() {
         if (!prefs.tcAccepted) prefs.tcAccepted = true
+        refreshWorkstationReadiness()
     }
 
     fun markModelSetupDone() {
         prefs.modelSetupDone = true
+        refreshWorkstationReadiness()
     }
 }

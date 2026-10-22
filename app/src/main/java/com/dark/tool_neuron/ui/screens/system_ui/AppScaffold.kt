@@ -1,6 +1,10 @@
 package com.dark.tool_neuron.ui.screens.system_ui
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
@@ -28,12 +32,17 @@ import com.dark.tool_neuron.ui.navigation.TNavigation
 import com.dark.tool_neuron.ui.screens.home_screen.ChatDrawerContent
 import com.dark.tool_neuron.viewmodel.HomeViewModel
 import com.dark.tool_neuron.viewmodel.ScaffoldViewModel
+import com.dark.tool_neuron.viewmodel.WorkstationViewModel
+import com.dark.tool_neuron.laptop.WorkstationApp
+import com.dark.tool_neuron.laptop.WorkstationSession
+import com.dark.tool_neuron.ui.screens.desktop.WorkstationRoutes
+import com.dark.tool_neuron.ui.screens.desktop.WorkstationTaskbar
 import kotlinx.coroutines.launch
 
 @Composable
 fun AppScaffold() {
     ProvideWindowMetrics {
-        AppScaffoldInner()
+        ModelImportHost { AppScaffoldInner() }
     }
 }
 
@@ -45,13 +54,49 @@ private fun AppScaffoldInner() {
 
     val homeViewModel: HomeViewModel = hiltViewModel()
     val scaffoldViewModel: ScaffoldViewModel = hiltViewModel()
+    val workstation: WorkstationViewModel = hiltViewModel()
+    val vibe: com.dark.tool_neuron.viewmodel.VibeViewModel = hiltViewModel()
+    val laptopState by workstation.state.collectAsStateWithLifecycle()
+    val windowStatus by workstation.status.collectAsStateWithLifecycle()
+    val currentApp = WorkstationRoutes.app(currentRoute)
+    val workstationReady by scaffoldViewModel.workstationReady.collectAsStateWithLifecycle()
+
+    fun navigateWindow(route: String) {
+        navController.navigate(route, WorkstationRoutes.navigationOptions())
+    }
+
+    fun showWindow(session: WorkstationSession) {
+        navigateWindow(session.focused?.let(WorkstationRoutes::route) ?: NavScreens.Desktop.route)
+    }
+
+    fun minimizeWindow() {
+        val app = currentApp ?: return
+        workstation.minimize(app).onSuccess(::showWindow).onFailure { navigateWindow(NavScreens.Desktop.route) }
+    }
+
+    LaunchedEffect(currentRoute, workstationReady) {
+        if (!scaffoldViewModel.refreshWorkstationReadiness()) return@LaunchedEffect
+        if (currentApp != null) workstation.open(currentApp)
+        else if (currentRoute == NavScreens.Desktop.route) workstation.desktop()
+    }
+
+    BackHandler(enabled = workstationReady && WorkstationRoutes.isRoot(currentRoute)) { minimizeWindow() }
     val actionWindowExpanded by homeViewModel.actionWindowExpanded.collectAsStateWithLifecycle()
     val pillState by homeViewModel.pillState.collectAsStateWithLifecycle()
     val chats by homeViewModel.chats.collectAsStateWithLifecycle()
     val currentChatId by homeViewModel.currentChatId.collectAsStateWithLifecycle()
 
+    val report: com.dark.tool_neuron.viewmodel.BetaReportViewModel = hiltViewModel()
+    val reportScreenshot = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { navController.context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            report.acceptScreenshot(uri)
+        }
+    }
     val nextDestination = remember { scaffoldViewModel.resolveStartDestination() }
     val shouldLock by scaffoldViewModel.shouldLock.collectAsStateWithLifecycle()
+    val vibeArchive = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip"), vibe::export)
+    val vibeImage = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png"), vibe::exportCapture)
     val rootWarning by scaffoldViewModel.rootWarning.collectAsStateWithLifecycle()
     val serverRunning by scaffoldViewModel.serverRunning.collectAsStateWithLifecycle()
     val downloadProgress by scaffoldViewModel.downloadProgress.collectAsStateWithLifecycle()
@@ -162,12 +207,35 @@ private fun AppScaffoldInner() {
                     onMenuClick = {
                         if (!isExpanded) scope.launch { drawerState.open() }
                     },
-                    onBack = { navController.popBackStack() },
+                    onBack = { if (workstationReady && WorkstationRoutes.isRoot(currentRoute)) minimizeWindow() else navController.popBackStack() },
                     onNavigateToStore = { navController.navigate(NavScreens.ModelStore.route) },
                     onNavigateToDesktop = { navController.navigate(NavScreens.Desktop.route) },
                 )
             },
             bottomBar = {
+                Column {
+                    if (workstationReady && (currentApp != null || currentRoute == NavScreens.Desktop.route)) {
+                        WorkstationTaskbar(
+                            session = laptopState.workstation,
+                            current = currentApp,
+                            status = windowStatus,
+                            onOpen = { app ->
+                                workstation.open(app)
+                                navigateWindow(WorkstationRoutes.route(app))
+                            },
+                            onDesktop = {
+                                workstation.desktop()
+                                navigateWindow(NavScreens.Desktop.route)
+                            },
+                            onMinimize = ::minimizeWindow,
+                            onClose = {
+                                currentApp?.let { app ->
+                                    workstation.close(app).onSuccess(::showWindow)
+                                        .onFailure { navigateWindow(NavScreens.Desktop.route) }
+                                }
+                            },
+                        )
+                    }
                 if (!isFullscreen) AppBottomBar(
                     currentRoute = currentRoute,
                     navController = navController,
@@ -178,8 +246,7 @@ private fun AppScaffoldInner() {
                         }
                     },
                     onRagSetupComplete = {
-                        scaffoldViewModel.markModelSetupDone()
-                        navController.navigate(NavScreens.HomeScreen.route) {
+                        navController.navigate(NavScreens.SetupCipher.route) {
                             popUpTo(NavScreens.SetupRag.route) { inclusive = true }
                         }
                     },
@@ -195,6 +262,7 @@ private fun AppScaffoldInner() {
                         }
                     },
                 )
+                }
             },
         ) { innerPadding ->
             TNavigation(
@@ -205,7 +273,7 @@ private fun AppScaffoldInner() {
                 actionWindowExpanded = actionWindowExpanded,
                 onActionWindowDismiss = homeViewModel::collapseActionWindow,
                 onUnlocked = {
-                    navController.navigate(NavScreens.Desktop.route) {
+                    navController.navigate(scaffoldViewModel.resolveStartDestination()) {
                         popUpTo(NavScreens.PasswordScreen.route) { inclusive = true }
                     }
                 },
@@ -220,11 +288,14 @@ private fun AppScaffoldInner() {
                     }
                 },
                 onRagSetupComplete = {
-                    scaffoldViewModel.markModelSetupDone()
                     navController.navigate(NavScreens.SetupCipher.route) {
                         popUpTo(NavScreens.SetupRag.route) { inclusive = true }
                     }
-                }
+                },
+                onWorkstationSetupComplete = scaffoldViewModel::markModelSetupDone,
+                onVibeExport = { vibeArchive.launch(it) },
+                onVibeCapture = { vibeImage.launch(it) },
+                onReportScreenshot = { reportScreenshot.launch(arrayOf("image/png", "image/jpeg")) },
             )
         }
     }

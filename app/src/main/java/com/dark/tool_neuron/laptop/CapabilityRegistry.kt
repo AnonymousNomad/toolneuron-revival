@@ -15,6 +15,20 @@ object CapabilityRegistry {
     )
 
     val SEED: List<CapabilityDescriptor> = listOf(
+        CapabilityDescriptor(id = "companion.plan", version = 1, description = "Register declared legal media references for a canonical project; no playback, game input or bridge transport is granted.", providers = listOf("tn.companion.plan"), permissions = listOf("filesystem.workspace.write")),
+        CapabilityDescriptor(id = "media.creation.plan", version = 1,
+            description = "Persist local story/series hierarchy, character bible, asset provenance and audio slots; check continuity and export a production plan. Rendering remains separately unavailable.",
+            requiredEffects = listOf("filesystem.workspace"), providers = listOf("tn.creation.plan"),
+            permissions = listOf("filesystem.workspace.write", "artifact.export"),
+            verification = listOf("canonical project identity, scoped references, continuity report and honest unrendered manifest")),
+        CapabilityDescriptor(
+            id = "dev.vibe.workspace", version = 1,
+            description = "Create/edit project source, build/check static web bundles, preview offline and export selected artifacts in Vibe Studio.",
+            requiredEffects = listOf("filesystem.workspace", "preview.static"),
+            providers = listOf("tn.vibe.static"),
+            permissions = listOf("filesystem.workspace.read", "filesystem.workspace.write", "preview.static", "artifact.export"),
+            verification = listOf("entrypoint and local asset checks; immutable file hashes; explicit export"),
+        ),
         CapabilityDescriptor(
             id = "dev.workspace.inspect",
             version = 1,
@@ -138,6 +152,7 @@ object ProcedureRegistry {
 
 object ToolRegistry {
     val SEEDS: List<ToolRef> = listOf(
+        ToolRef("preview.static", ToolKind.FILESYSTEM, "Offline static preview", ToolStatus.AVAILABLE, "Per-build origin; no network, filesystem URLs or native JavaScript bridge"),
         ToolRef("filesystem.workspace", ToolKind.FILESYSTEM, "Workspace files", ToolStatus.AVAILABLE, "Laptop workspace read/write under the app-owned directory"),
         ToolRef("terminal.execute", ToolKind.TERMINAL, "Embedded terminal", ToolStatus.AVAILABLE, "Platform shell (/system/bin/sh) via app-owned PTY; governed effect provider tn.terminal.system-sh"),
         ToolRef("git.cli", ToolKind.GIT, "Git", ToolStatus.PLANNED, "Requires the embedded development environment"),

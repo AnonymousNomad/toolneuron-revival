@@ -89,6 +89,7 @@ object InferenceClient {
     // BIND_AUTO_CREATE makes Android respawn :inference the moment we killed
     // it. Consumed on the next disconnect callback.
     @Volatile private var userStopRequested: Boolean = false
+    @Volatile private var foregroundRequested: Boolean = false
 
     private val _contextUsage = MutableStateFlow(0f)
     val contextUsage: StateFlow<Float> = _contextUsage.asStateFlow()
@@ -383,6 +384,7 @@ object InferenceClient {
 
     fun startAndBind(context: Context) {
         appContext = context.applicationContext
+        foregroundRequested = true
         try {
             ContextCompat.startForegroundService(context, Intent(context, InferenceService::class.java))
         } catch (t: Throwable) {
@@ -392,6 +394,7 @@ object InferenceClient {
     }
 
     fun unbind() {
+        foregroundRequested = false
         val ctx = appContext ?: return
         try { ctx.unbindService(connection) } catch (_: Exception) {}
         _service.value = null
@@ -435,7 +438,7 @@ object InferenceClient {
         val ctx = appContext ?: return
         try { ctx.unbindService(connection) } catch (_: Exception) {}
         Handler(Looper.getMainLooper()).postDelayed({
-            performBind()
+            if (foregroundRequested) startAndBind(ctx) else performBind()
         }, REBIND_DELAY_MS)
     }
 
@@ -447,12 +450,7 @@ object InferenceClient {
             Log.w(TAG, "ensureBound timed out; attempting foreground service (re)start", e)
             val ctx = appContext
             if (ctx != null) {
-                try {
-                    ContextCompat.startForegroundService(ctx, Intent(ctx, InferenceService::class.java))
-                } catch (t: Throwable) {
-                    Log.e(TAG, "recovery startForegroundService failed", t)
-                }
-                performBind()
+                startAndBind(ctx)
             }
             withTimeout(BIND_TIMEOUT_MS) { _service.first { it != null }!! }
         }
@@ -482,21 +480,7 @@ object InferenceClient {
             ?: return Result.failure(IllegalArgumentException("Cannot open URI: $uri"))
         return suspendCancellableCoroutine { cont ->
             trackLoad(cont) { pfd.close() }
-            svc.loadModelFromFd(pfd, configJson, object : IModelLoadCallback.Stub() {
-                override fun onSuccess(modelInfoJson: String) {
-                    pfd.close()
-                    untrackLoad(cont)
-                    _isModelLoaded.value = true
-                    cont.resume(Result.success(modelInfoJson))
-                }
-                override fun onError(message: String) {
-                    pfd.close()
-                    untrackLoad(cont)
-                    _isModelLoaded.value = false
-                    reportLiveError()
-                    cont.resume(Result.failure(RuntimeException(message)))
-                }
-            })
+            svc.loadModelFromFd(pfd, configJson, loadCallback(cont) { pfd.close() })
         }
     }
 
@@ -505,10 +489,14 @@ object InferenceClient {
         try { ensureBound().unloadModel() } catch (_: Exception) {}
     }
 
+    suspend fun unloadModelForLoad(loadId: String): Boolean = withContext(Dispatchers.IO) {
+        ensureBound().unloadModelForLoad(loadId).also { if (it) _isModelLoaded.value = false }
+    }
+
     fun getModelInfo(): String? =
         try { _service.value?.getModelInfo() } catch (_: Exception) { null }
 
-    fun generateMultiTurn(messagesJson: String, maxTokens: Int): Flow<InferenceEvent> =
+    fun generateMultiTurn(messagesJson: String, maxTokens: Int, loadId: String? = null): Flow<InferenceEvent> =
         callbackFlow {
             val svc = withTimeoutOrNull(BIND_TIMEOUT_MS) { _service.first { it != null } }
             if (svc == null) {
@@ -516,17 +504,24 @@ object InferenceClient {
                 close()
                 return@callbackFlow
             }
-            val cb = generationCallback { event -> trySend(event) }
+            val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cb = generationCallback { event ->
+                val done = event is InferenceEvent.Done || event is InferenceEvent.Error
+                if (done) terminal.set(true)
+                trySend(event)
+                if (done) close()
+            }
             try {
-                svc.generateMultiTurn(messagesJson, maxTokens, cb)
+                if (loadId == null) svc.generateMultiTurn(messagesJson, maxTokens, cb)
+                else svc.generateMultiTurnForLoad(messagesJson, maxTokens, loadId, cb)
             } catch (e: Exception) {
                 trySend(InferenceEvent.Error(e.message ?: "Service error"))
                 close()
             }
-            awaitClose {}
+            awaitClose { if (loadId != null && !terminal.get()) runCatching { svc.stopGenerationForLoad(loadId) } }
         }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
-    fun generate(prompt: String, maxTokens: Int): Flow<InferenceEvent> =
+    fun generate(prompt: String, maxTokens: Int, loadId: String? = null): Flow<InferenceEvent> =
         callbackFlow {
             val svc = withTimeoutOrNull(BIND_TIMEOUT_MS) { _service.first { it != null } }
             if (svc == null) {
@@ -534,14 +529,20 @@ object InferenceClient {
                 close()
                 return@callbackFlow
             }
-            val cb = generationCallback { event -> trySend(event) }
+            val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cb = generationCallback { event ->
+                val done = event is InferenceEvent.Done || event is InferenceEvent.Error
+                if (done) terminal.set(true)
+                trySend(event)
+                if (done) close()
+            }
             try {
-                svc.generate(prompt, maxTokens, cb)
+                if (loadId == null) svc.generate(prompt, maxTokens, cb) else svc.generateForLoad(prompt, maxTokens, loadId, cb)
             } catch (e: Exception) {
                 trySend(InferenceEvent.Error(e.message ?: "Service error"))
                 close()
             }
-            awaitClose {}
+            awaitClose { if (loadId != null && !terminal.get()) runCatching { svc.stopGenerationForLoad(loadId) } }
         }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     fun stopGeneration() {
@@ -554,7 +555,7 @@ object InferenceClient {
      * Caller is expected to replace the persisted chat history with the
      * collected summary after [InferenceEvent.Done].
      */
-    fun compactConversation(messagesJson: String, maxTokens: Int): Flow<InferenceEvent> =
+    fun compactConversation(messagesJson: String, maxTokens: Int, loadId: String? = null): Flow<InferenceEvent> =
         callbackFlow {
             val svc = withTimeoutOrNull(BIND_TIMEOUT_MS) { _service.first { it != null } }
             if (svc == null) {
@@ -562,14 +563,20 @@ object InferenceClient {
                 close()
                 return@callbackFlow
             }
-            val cb = generationCallback { event -> trySend(event) }
+            val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cb = generationCallback { event ->
+                val done = event is InferenceEvent.Done || event is InferenceEvent.Error
+                if (done) terminal.set(true)
+                trySend(event)
+                if (done) close()
+            }
             try {
-                svc.compactConversation(messagesJson, maxTokens, cb)
+                if (loadId == null) svc.compactConversation(messagesJson, maxTokens, cb) else svc.compactConversationForLoad(messagesJson, maxTokens, loadId, cb)
             } catch (e: Exception) {
                 trySend(InferenceEvent.Error(e.message ?: "Service error"))
                 close()
             }
-            awaitClose {}
+            awaitClose { if (loadId != null && !terminal.get()) runCatching { svc.stopGenerationForLoad(loadId) } }
         }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     suspend fun loadVlmProjector(
@@ -606,6 +613,7 @@ object InferenceClient {
         imageUris: List<Uri>,
         maxTokens: Int,
         imageQuality: ImageQuality = ImageQuality.MEDIUM,
+        loadId: String? = null,
     ): Flow<InferenceEvent> = callbackFlow {
         val svc = withTimeoutOrNull(BIND_TIMEOUT_MS) { _service.first { it != null } }
         if (svc == null) {
@@ -623,22 +631,29 @@ object InferenceClient {
             close()
             return@callbackFlow
         }
-        val cb = generationCallback { event -> trySend(event) }
+        val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cb = generationCallback { event ->
+                val done = event is InferenceEvent.Done || event is InferenceEvent.Error
+                if (done) terminal.set(true)
+                trySend(event)
+                if (done) close()
+            }
         try {
-            svc.generateVlm(messagesJson, pfds, maxTokens, imageQuality.nativeValue, cb)
+            if (loadId == null) svc.generateVlm(messagesJson, pfds, maxTokens, imageQuality.nativeValue, cb) else svc.generateVlmForLoad(messagesJson, pfds, maxTokens, imageQuality.nativeValue, loadId, cb)
         } catch (e: Exception) {
             trySend(InferenceEvent.Error(e.message ?: "Service error"))
             close()
         } finally {
             pfds.forEach { p -> try { p.close() } catch (_: Exception) {} }
         }
-        awaitClose {}
+        awaitClose { if (loadId != null && !terminal.get()) runCatching { svc.stopGenerationForLoad(loadId) } }
     }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     suspend fun precomputeVision(
         context: Context,
         imageUri: Uri,
         imageQuality: ImageQuality,
+        loadId: String? = null,
     ): Boolean = withContext(Dispatchers.IO) {
         val svc = withTimeoutOrNull(BIND_TIMEOUT_MS) { _service.first { it != null } } ?: return@withContext false
         val pfd = try {
@@ -648,7 +663,7 @@ object InferenceClient {
             null
         } ?: return@withContext false
         try {
-            svc.precomputeVlmVision(pfd, imageQuality.nativeValue)
+            if (loadId == null) svc.precomputeVlmVision(pfd, imageQuality.nativeValue) else svc.precomputeVlmVisionForLoad(pfd, imageQuality.nativeValue, loadId)
         } catch (e: Exception) {
             Log.e(TAG, "precomputeVision failed", e)
             false
@@ -1067,14 +1082,29 @@ object InferenceClient {
         } catch (_: Throwable) { emptyList() }
     }
 
-    private fun loadCallback(cont: CancellableContinuation<Result<String>>) =
+    private val cleanupScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    private fun cleanupRejectedLoad(info: String) {
+        val id = runCatching { org.json.JSONObject(info).getString("loadId") }.getOrNull() ?: return
+        cleanupScope.launch { runCatching { unloadModelForLoad(id) } }
+    }
+    fun configureChatForLoad(loadId: String, prompt: String, thinking: Boolean): String =
+        checkNotNull(_service.value) { "Inference service unavailable" }.configureChatForLoad(loadId, prompt, thinking)
+    suspend fun loadVlmProjectorForLoad(loadId: String, path: String, threads: Int): String = withContext(Dispatchers.IO) {
+        ensureBound().loadVlmProjectorForLoad(loadId, path, threads)
+    }
+    fun stopGenerationForLoad(loadId: String) { runCatching { _service.value?.stopGenerationForLoad(loadId) } }
+
+    private fun loadCallback(cont: CancellableContinuation<Result<String>>, completed: () -> Unit = {}) =
         object : IModelLoadCallback.Stub() {
             override fun onSuccess(modelInfoJson: String) {
+                completed()
                 untrackLoad(cont)
                 _isModelLoaded.value = true
-                if (cont.isActive) cont.resume(Result.success(modelInfoJson))
+                if (cont.isActive) cont.resume(Result.success(modelInfoJson)) { _, _, _ -> cleanupRejectedLoad(modelInfoJson) }
+                else cleanupRejectedLoad(modelInfoJson)
             }
             override fun onError(message: String) {
+                completed()
                 untrackLoad(cont)
                 _isModelLoaded.value = false
                 reportLiveError()

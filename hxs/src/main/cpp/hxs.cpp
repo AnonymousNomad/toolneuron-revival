@@ -140,7 +140,7 @@ static hxs::Collection* ensure_collection(const std::string& name) {
     }
 
     auto coll = std::make_unique<hxs::Collection>(name, g_base_dir, g_crypto);
-    coll->load();
+    if (!coll->load()) return nullptr;
 
     auto* ptr = coll.get();
     g_collections[name] = std::move(coll);
@@ -202,7 +202,7 @@ Java_com_dark_hxs_HexStorage_nativeOpenPlaintext(
     // Load registered collections
     for (auto& meta : g_manifest->list_collections()) {
         auto coll = std::make_unique<hxs::Collection>(meta.name, g_base_dir, g_crypto);
-        coll->load();
+        if (!coll->load()) return JNI_FALSE;
         g_collections[meta.name] = std::move(coll);
     }
 
@@ -277,7 +277,7 @@ Java_com_dark_hxs_HexStorage_nativeOpenEncrypted(
 
     for (auto& meta : g_manifest->list_collections()) {
         auto coll = std::make_unique<hxs::Collection>(meta.name, g_base_dir, g_crypto);
-        coll->load();
+        if (!coll->load()) return JNI_FALSE;
         g_collections[meta.name] = std::move(coll);
     }
 

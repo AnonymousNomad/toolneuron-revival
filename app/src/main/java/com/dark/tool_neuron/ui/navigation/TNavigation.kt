@@ -91,6 +91,10 @@ fun TNavigation(
     onSetupComplete: () -> Unit = {},
     onModelSetupComplete: () -> Unit = {},
     onRagSetupComplete: () -> Unit = {},
+    onWorkstationSetupComplete: () -> Unit = {},
+    onVibeExport: (String) -> Unit = {},
+    onVibeCapture: (String) -> Unit = {},
+    onReportScreenshot: () -> Unit = {},
 ) {
     val transitions = rememberNavTransitions()
 
@@ -118,11 +122,20 @@ fun TNavigation(
         composable(NavScreens.HomeScreen.route) {
             val activity = LocalContext.current as ComponentActivity
             val homeViewModel: HomeViewModel = hiltViewModel(activity)
+            val studio: com.dark.tool_neuron.viewmodel.VibeViewModel = hiltViewModel(activity)
+            val creator: com.dark.tool_neuron.viewmodel.CreatorViewModel = hiltViewModel(activity)
             HomeScreen(
                 innerPadding = innerPadding,
                 actionWindowExpanded = actionWindowExpanded,
                 onActionWindowDismiss = onActionWindowDismiss,
                 onOpenModelManager = { navController.navigate(NavScreens.ModelManager.route) },
+                onOpenCreator = { projectId ->
+                    creator.open(projectId, onFailed = homeViewModel::projectActionFailed) { navController.navigate(NavScreens.Creator.route) }
+                },
+                onOpenVibe = { projectId ->
+                    studio.open(projectId)
+                    navController.navigate(NavScreens.Vibe.route)
+                },
                 viewModel = homeViewModel,
             )
         }
@@ -192,7 +205,13 @@ fun TNavigation(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToHfExplorer = { navController.navigate(NavScreens.HfExplorer.route) },
                 onNavigateToDownloads = { navController.navigate(NavScreens.Downloads.route) },
+                onOpenModelLab = { navController.navigate(NavScreens.ModelLab.route) },
             )
+        }
+        composable(NavScreens.ModelLab.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val lab: com.dark.tool_neuron.viewmodel.ModelLabViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.model_store.ModelLabScreen(innerPadding, { navController.navigate(it) }, lab)
         }
         composable(NavScreens.Downloads.route) {
             DownloadsScreen(innerPadding = innerPadding)
@@ -208,17 +227,47 @@ fun TNavigation(
             TerminalScreen(innerPadding = innerPadding)
         }
         composable(NavScreens.Cipher.route) {
-            CipherScreen(innerPadding = innerPadding)
+            CipherScreen(innerPadding = innerPadding, onOpenModelLab = { navController.navigate(NavScreens.ModelLab.route) })
         }
         composable(NavScreens.SetupCipher.route) {
             SetupCipherScreen(
                 innerPadding = innerPadding,
                 onComplete = {
+                    navController.navigate(NavScreens.SetupAbilities.route) {
+                        popUpTo(NavScreens.SetupCipher.route) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(NavScreens.SetupAbilities.route) {
+            AbilitiesScreen(
+                innerPadding = innerPadding,
+                onContinue = {
+                    onWorkstationSetupComplete()
                     navController.navigate(NavScreens.Desktop.route) {
                         popUpTo(0) { inclusive = true }
                     }
                 },
             )
+        }
+        composable(NavScreens.BetaReport.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val report: com.dark.tool_neuron.viewmodel.BetaReportViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.reporting.BetaReportScreen(innerPadding, onReportScreenshot, report)
+        }
+        composable(NavScreens.Companion.route) {
+            val companion: com.dark.tool_neuron.viewmodel.CompanionViewModel = hiltViewModel()
+            com.dark.tool_neuron.ui.screens.companion.CompanionScreen(innerPadding, { navController.navigate(it) }, companion)
+        }
+        composable(NavScreens.Creator.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val creator: com.dark.tool_neuron.viewmodel.CreatorViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.creator.CreatorScreen(innerPadding, { navController.navigate(it) }, creator)
+        }
+        composable(NavScreens.Vibe.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val studio: com.dark.tool_neuron.viewmodel.VibeViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.vibe.VibeScreen(innerPadding, { navController.navigate(it) }, studio, onVibeExport, onVibeCapture)
         }
         composable(NavScreens.Desktop.route) {
             DesktopScreen(
@@ -241,18 +290,18 @@ fun TNavigation(
         composable(NavScreens.ModelSetup.route) {
             val activity = LocalContext.current as ComponentActivity
             val storeVm: ModelStoreViewModel = hiltViewModel(activity)
+            val localImport by storeVm.localImport.collectAsStateWithLifecycle()
+            val installedModels by storeVm.installedModels.collectAsStateWithLifecycle()
 
             ModelSetupScreen(
                 innerPadding = innerPadding,
+                localImport = localImport,
                 onPackSelected = { packId ->
                     storeVm.downloadPack(packId)
                     onModelSetupComplete()
                 },
                 onOpenStore = { navController.navigate(NavScreens.ModelStore.route) },
-                onLocalImport = { uri, name, size, type ->
-                    storeVm.importLocalModel(uri, name, size, type)
-                    onModelSetupComplete()
-                },
+                hasInstalledModels = installedModels.isNotEmpty(),
                 onSkip = { onModelSetupComplete() }
             )
         }

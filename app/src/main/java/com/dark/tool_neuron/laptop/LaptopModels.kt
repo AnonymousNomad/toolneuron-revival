@@ -19,6 +19,11 @@ data class CipherLaptop(
     val procedures: List<ProcedureRef> = emptyList(),
     val permissions: List<PermissionGrant> = emptyList(),
     val resident: ResidentState = ResidentState(),
+    val workstation: WorkstationSession = WorkstationSession(),
+    val cipherAssignment: CipherAssignment? = null,
+    val modelLabRuns: List<ModelLabRun> = emptyList(),
+    val qualifications: List<QualificationRecord> = emptyList(),
+    val vibeBuilds: List<com.dark.tool_neuron.studio.VibeBuildRecord> = emptyList(),
 )
 
 @Serializable
@@ -37,6 +42,10 @@ data class WorkspaceRef(
     val name: String,
     val createdAtMs: Long,
     val metadata: Map<String, String> = emptyMap(),
+    val conversationIds: List<String> = emptyList(),
+    val creation: com.dark.tool_neuron.creation.CreationPlan? = null,
+    val companion: com.dark.tool_neuron.companion.CompanionPlan? = null,
+    val vibeDraft: com.dark.tool_neuron.studio.VibeDraft? = null,
 )
 
 @Serializable
@@ -59,6 +68,7 @@ data class TaskRecord(
     val failureReason: String? = null,
     val createdAtMs: Long,
     val updatedAtMs: Long,
+    val workspaceId: String? = null,
 )
 
 @Serializable

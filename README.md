@@ -1,25 +1,30 @@
-# ToolNeuron
+# ToolNeuron Revival
 
-On-device AI for Android. No Google Play services, no telemetry, no cloud. Models, chats, RAG documents, and key material stay on the phone.
+A local-first Android AI workstation: Chat, canonical projects, Cipher, Files, governed Terminal, Vibe Studio, Model Lab, Creator and TV/Game companion foundations.
 
-The point isn't to clone ChatGPT into your pocket. It's to give you a chat surface, a RAG pipeline, a voice loop, and a plugin runtime that all run with the radio off if you want them to.
+**3.1.0-cloud.1 / code 40 — DEVELOPMENT / TESTING.** This cloud reconstruction is distinct from the untransferred laptop 3.0.8 line. Automated JVM and debug-build gates pass; physical Android acceptance and actual model qualification remain **NOT TESTED**. Exact source/APK/signer evidence and publication status are recorded in [the cloud receipt](cloud/FINAL_RECEIPT.md).
 
-[Play Store](https://play.google.com/store/apps/details?id=com.dark.tool_neuron) · [Repo](https://github.com/Siddhesh2377/ToolNeuron) · [Releases](https://github.com/Siddhesh2377/ToolNeuron/releases) · [Issues](https://github.com/Siddhesh2377/ToolNeuron/issues) · [Discord](https://discord.gg/mVPwHDhrAP)
+[Source](https://github.com/AnonymousNomad/toolneuron-revival) · [Releases](https://github.com/AnonymousNomad/toolneuron-revival/releases) · [Issues](https://github.com/AnonymousNomad/toolneuron-revival/issues)
 
+The canonical website is the existing Floot **Covert Nexus** project, `01147976-3673-42c7-9220-2d028594ba86`. No production website or APK download URL is invented when publication is pending.
 
-## What it does
+## Workstation journeys
 
-- **Chat** against any compatible [GGUF](https://huggingface.co/models?other=gguf) model. Streaming output, multi-turn, optional thinking mode, per-turn tok/s + TTFT + peak-memory metrics.
-- **Vision** via colocated `mmproj` projector files. Image bytes cross AIDL as PFDs, never `byte[]`.
-- **RAG** over PDF, DOCX, XLSX, PPTX, ODT, EPUB, RTF, MD, HTML, JSON, XML, CSV, TXT. Source bytes are content-addressed; re-attach a doc to any chat from the picker.
-- **Voice** through sherpa-onnx. Streaming TTS that chunks by sentence, tap-to-toggle STT. VITS / Piper / Whisper all work.
-- **HTTP server** in its own `:server` process. OpenAI-shaped endpoints, bearer-token auth, rate limit, audit log. Material 3 web UI bundled at `/`.
-- **HuggingFace browse** — full-screen explorer with the filters that matter (pipeline tag, library, params, quant, license, gated, author, dataset).
-- **Plugin store** — install plugins from `Void2377/tool-neuron-plugins` on HF. Each one is a sandboxed Android module with its own Compose UI, can ship ONNX models, and runs inside the host process behind a capability gate.
+- Bind Chat to one canonical project; open that same project in Vibe, Files or Terminal. Cipher context stays scoped to its pinned project.
+- Explicitly assign Cipher's artifact/runtime/chassis. Installation, compatibility, current device fit, qualification and permission are separate states.
+- Run local text smoke batteries in Model Lab; observed outputs yield PASS/FAIL/UNKNOWN and reviewed evidence export. JVM test doubles are not model qualification.
+- Create a web, utility or game template in Vibe; edit/save source, build/check immutable bundles, preview offline, capture and export. Saved drafts recover locally; pending edits are durable only after the saved message.
+- Keep Story/Series seasons, episodes, scenes, shots, character bibles, declared asset rights/provenance and audio slots in Creator. Export a production plan. Render providers remain UNCONFIGURED; no generated media is claimed.
+- Register legal-source declarations in TV/Game companion. Playback and device/game transports remain UNCONFIGURED; model intents cannot control frame timing or raw inputs.
+- Prepare a bounded beta-report ZIP with reproduction notes and optional screenshot; review exact contents before explicit system sharing. No silent telemetry upload.
 
-## What it doesn't do
+The existing GGML/llama.cpp, vision, RAG, voice, HTTP server, model browser and plugin subsystems are preserved. Covert Engine R0 is behind an explicit unavailable backend boundary: exact source `3020b7f407b61addf872e6aff30d689d71ef0f20` remains laptop-only ([issue #2](https://github.com/AnonymousNomad/toolneuron-revival/issues/2)). There is no silent backend/provider fallback.
 
-Tool calling, Termux integration, anything cloud. The April 2026 scope pivot took those out and they're not coming back. Image generation (`:ai_sd`) and the plugin marketplace came in instead, May 2026.
+## Verification
+
+Use JDK 21, Android SDK 37.0, NDK 28.2.13676358 and CMake 3.31.4. In the prepared cloud environment, source `/workspace/.setup/activate.sh`, then run `bash scripts/cloud_verify.sh fast`, `slice` or `release` sequentially. Release signing requires configured signing material; the cloud artifact is debug-signed for testing. Physical app-lock, SAF, WebView, native model and Samsung acceptance must be performed on a real device. Do not uninstall an existing data-bearing installation to bypass a signer mismatch.
+
+The following technical sections describe the inherited upstream subsystems; upstream provenance is Siddhesh2377/ToolNeuron (MIT). Current cloud capabilities and evidence above take precedence over older scope notes.
 
 ## Architecture
 

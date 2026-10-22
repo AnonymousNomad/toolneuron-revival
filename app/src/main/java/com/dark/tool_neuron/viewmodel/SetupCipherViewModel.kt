@@ -58,11 +58,9 @@ class SetupCipherViewModel @Inject constructor(
     }
 
     private fun computeAdmission(): ResidentAdmission {
-        val memAvail = readMemAvailableBytes()
-        return when (val s = ResidentSelector.select(modelRepo.models.value, memAvail)) {
-            is ResidentModelSelection.Selected -> ResidentAdmission("READY", "${s.model.name} — ${s.reason}")
-            is ResidentModelSelection.Unavailable -> ResidentAdmission("NEEDS MODEL", s.reason)
-        }
+        val assignment = laptop.state.value.cipherAssignment
+        return if (assignment == null) ResidentAdmission("EMPTY", "No assistant assigned. Import a model, then assign and qualify it in Cipher / Model Lab after setup.")
+        else ResidentAdmission("ASSIGNED", "${assignment.modelId} · ${assignment.contextSize} context · ${assignment.runtimeId}. Readiness is checked in Cipher against actual file/runtime/device evidence.")
     }
 
     private fun computeDeviceInfo(): DeviceInfo {

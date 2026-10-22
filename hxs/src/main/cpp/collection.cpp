@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cerrno>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -116,43 +117,42 @@ bool Collection::load() {
     next_id_ = 1;
 
     // Load WAL first
-    wal_->open();
+    if (!wal_->open()) return false;
 
     // Load data file
     int fd = ::open(data_path_.c_str(), O_RDONLY);
+    if (fd < 0 && errno != ENOENT) return false;
     if (fd >= 0) {
         struct stat st;
-        if (fstat(fd, &st) == 0 && st.st_size > 0) {
-            std::vector<uint8_t> buf(static_cast<size_t>(st.st_size));
-            ssize_t n = ::read(fd, buf.data(), buf.size());
-            if (n > 0) {
-                const uint8_t* p = buf.data();
-                const uint8_t* end = buf.data() + n;
-
-                while (p + 4 <= end) {
-                    uint32_t block_len;
-                    memcpy(&block_len, p, 4);
-                    p += 4;
-
-                    if (p + block_len > end) break;
-
-                    // Decrypt → decompress → decode
-                    auto decrypted = open_record(p, block_len);
-                    if (decrypted.empty()) { p += block_len; continue; }
-
-                    auto decompressed = decompress(decrypted.data(), decrypted.size());
-                    if (decompressed.empty()) { p += block_len; continue; }
-
-                    Record rec = Record::decode(decompressed.data(), decompressed.size());
-                    if (rec.id() > 0 && !rec.is_deleted()) {
-                        if (rec.id() >= next_id_) next_id_ = rec.id() + 1;
-                        records_[rec.id()] = std::move(rec);
-                    }
-                    p += block_len;
-                }
-            }
+        if (fstat(fd, &st) != 0 || st.st_size < 0 || st.st_size > 512LL * 1024 * 1024) { ::close(fd); return false; }
+        std::vector<uint8_t> buf(static_cast<size_t>(st.st_size));
+        size_t offset = 0;
+        while (offset < buf.size()) {
+            ssize_t n = ::read(fd, buf.data() + offset, buf.size() - offset);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) { ::close(fd); return false; }
+            offset += static_cast<size_t>(n);
         }
         ::close(fd);
+        size_t cursor = 0;
+        while (cursor < buf.size()) {
+            if (buf.size() - cursor < sizeof(uint32_t)) return false;
+            uint32_t block_len;
+            memcpy(&block_len, buf.data() + cursor, sizeof(block_len));
+            cursor += sizeof(block_len);
+            if (block_len == 0 || block_len > buf.size() - cursor) return false;
+            auto decrypted = open_record(buf.data() + cursor, block_len);
+            if (decrypted.empty()) return false;
+            auto decompressed = decompress(decrypted.data(), decrypted.size());
+            if (decompressed.empty()) return false;
+            Record rec = Record::decode(decompressed.data(), decompressed.size());
+            if (rec.id() == 0) return false;
+            if (!rec.is_deleted()) {
+                if (rec.id() >= next_id_) next_id_ = rec.id() + 1;
+                records_[rec.id()] = std::move(rec);
+            }
+            cursor += block_len;
+        }
     }
 
     // Load serialized indexes

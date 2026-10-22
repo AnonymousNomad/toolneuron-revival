@@ -19,6 +19,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import java.io.File
 import javax.inject.Inject
@@ -84,12 +89,11 @@ class ModelSessionManager @Inject constructor(
         }
     }
 
-    suspend fun load(model: ModelInfo) {
+    private val lifecycle = kotlinx.coroutines.sync.Mutex()
+    suspend fun load(model: ModelInfo) = lifecycle.withLock { loadOwned(model) }
+    private suspend fun loadOwned(model: ModelInfo) {
         _loadState.value = ModelLoadState.Loading(model.id)
         _vlmAutoLoadError.value = null
-        if (InferenceClient.isVlmLoaded.value) {
-            InferenceClient.releaseVlmProjector()
-        }
         val config = modelRepo.getConfig(model.id)
         _maxTokens.value = readMaxTokens(config)
         _contextSize.value = readContextSize(config)
@@ -102,11 +106,12 @@ class ModelSessionManager @Inject constructor(
             )
         }
         result
-            .onSuccess {
+            .onSuccess { receipt ->
+                val loadId = JSONObject(receipt).getString("loadId").also { check(it.isNotBlank() && it != "null") }
                 modelRepo.setActive(model.id)
                 _supportsThinking.value = InferenceClient.supportsThinking()
-                _loadState.value = ModelLoadState.Active(model.id)
-                if (model.pathType == PathType.FILE) maybeAutoLoadVlmProjector(model)
+                _loadState.value = ModelLoadState.Active(model.id, loadId)
+                if (model.pathType == PathType.FILE) maybeAutoLoadVlmProjector(model, loadId)
             }
             .onFailure { err ->
                 _supportsThinking.value = false
@@ -114,7 +119,7 @@ class ModelSessionManager @Inject constructor(
             }
     }
 
-    private suspend fun maybeAutoLoadVlmProjector(model: ModelInfo) {
+    private suspend fun maybeAutoLoadVlmProjector(model: ModelInfo, originalLoadId: String) {
         val baseFile = File(model.path)
         if (!baseFile.exists()) return
         val modelsDir = modelRepo.getModelsDir()
@@ -124,42 +129,46 @@ class ModelSessionManager @Inject constructor(
             _vlmAutoLoadError.value = "Projector file missing from ${baseFile.parentFile?.name}. Download a projector from the repo."
             return
         }
-        val ok = withContext(Dispatchers.IO) {
+        val ok = withContext(Dispatchers.IO + NonCancellable) {
             try {
-                InferenceClient.loadVlmProjector(
-                    mmproj.absolutePath,
-                    vlmProjectorThreadsFor(appPrefs.threadMode),
-                    imageMinTokens = -1,
-                    imageMaxTokens = -1,
-                )
+                val current = (_loadState.value as? ModelLoadState.Active)?.takeIf { it.loadId == originalLoadId } ?: error("Chat model ownership lost")
+                val next = InferenceClient.loadVlmProjectorForLoad(current.loadId, mmproj.absolutePath, vlmProjectorThreadsFor(appPrefs.threadMode))
+                _loadState.value = current.copy(loadId = next)
+                true
             } catch (e: Exception) {
                 Log.e(TAG, "VLM projector auto-load failed", e)
                 _vlmAutoLoadError.value = e.message ?: "Projector load failed"
                 false
             }
         }
+        currentCoroutineContext().ensureActive()
         if (!ok && _vlmAutoLoadError.value == null) {
             _vlmAutoLoadError.value = "Projector load returned false."
         }
     }
 
-    suspend fun unload() {
-        if (InferenceClient.isVlmLoaded.value) {
-            InferenceClient.releaseVlmProjector()
-        }
-        InferenceClient.unloadModel()
+    fun invalidateForExternalLoad() {
         _supportsThinking.value = false
         _userSystemPrompt.value = ""
         _loadState.value = ModelLoadState.Idle
     }
 
-    fun setThinkingEnabled(enabled: Boolean) {
-        InferenceClient.setThinkingEnabled(enabled)
+    suspend fun unload() = lifecycle.withLock { unloadOwned() }
+    private suspend fun unloadOwned() {
+        (_loadState.value as? ModelLoadState.Active)?.let { InferenceClient.unloadModelForLoad(it.loadId) }
+        _supportsThinking.value = false
+        _userSystemPrompt.value = ""
+        _loadState.value = ModelLoadState.Idle
     }
 
-    fun stopGeneration() {
-        InferenceClient.stopGeneration()
+    fun requireLoadId(): String = (_loadState.value as? ModelLoadState.Active)?.loadId ?: error("Reload the Chat model before continuing")
+    fun configureChat(thinking: Boolean, prompt: String) {
+        val current = _loadState.value as? ModelLoadState.Active ?: error("Reload the Chat model before continuing")
+        val next = InferenceClient.configureChatForLoad(current.loadId, prompt, thinking)
+        _loadState.value = current.copy(loadId = next)
     }
+    fun setThinkingEnabled(enabled: Boolean) { configureChat(enabled, _userSystemPrompt.value) }
+    fun stopGeneration() { (_loadState.value as? ModelLoadState.Active)?.let { InferenceClient.stopGenerationForLoad(it.loadId) } }
 
     private fun readPreferredProjector(config: ModelConfig?): String? {
         if (config == null) return null

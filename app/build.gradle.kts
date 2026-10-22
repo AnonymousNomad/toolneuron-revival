@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -28,6 +29,11 @@ android {
     }
 
     defaultConfig {
+        val runtimeHash = MessageDigest.getInstance("SHA-256").digest(rootProject.file("libs/gguf_lib-release.aar").readBytes()).joinToString("") { "%02x".format(it) }
+        buildConfigField("String", "GGML_ARTIFACT_SHA256", "\"$runtimeHash\"")
+        val sourceRevision = providers.gradleProperty("tn.sourceSha").orElse("UNRECORDED").get()
+        require(sourceRevision == "UNRECORDED" || sourceRevision.matches(Regex("[a-f0-9]{40}")))
+        buildConfigField("String", "SOURCE_REVISION", "\"$sourceRevision\"")
         applicationId = "com.anonymousnomad.toolneuron.covert"
         minSdk = 31
         targetSdk = 37

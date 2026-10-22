@@ -122,9 +122,9 @@ class InferenceCoordinator @Inject constructor(
                     val uris = userImages.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
                     val quality = runCatching { ImageQuality.valueOf(appPrefs.vlmImageQuality) }
                         .getOrDefault(ImageQuality.MEDIUM)
-                    InferenceClient.generateVlm(app, historyJson, uris, modelSession.maxTokens.value, quality)
+                    InferenceClient.generateVlm(app, historyJson, uris, modelSession.maxTokens.value, quality, modelSession.requireLoadId())
                 } else {
-                    InferenceClient.generateMultiTurn(historyJson, modelSession.maxTokens.value)
+                    InferenceClient.generateMultiTurn(historyJson, modelSession.maxTokens.value, modelSession.requireLoadId())
                 }
 
                 stream

@@ -53,6 +53,7 @@ fun ModelStoreScreen(
     onNavigateBack: () -> Unit = {},
     onNavigateToHfExplorer: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onOpenModelLab: () -> Unit = {},
 ) {
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val filteredModels by viewModel.filteredModels.collectAsStateWithLifecycle()
@@ -107,6 +108,7 @@ fun ModelStoreScreen(
                         )
                     },
                     actions = {
+                        androidx.compose.material3.TextButton(onClick = onOpenModelLab) { Text("Lab") }
                         if (selectedTab == StoreTab.MODELS) {
                             ActionButton(
                                 onClickListener = { viewModel.refreshModels() },

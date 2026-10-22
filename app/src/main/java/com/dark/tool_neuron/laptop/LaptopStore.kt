@@ -21,6 +21,7 @@ class HxsLaptopPersistence @Inject constructor(
     private val encryptor: HxsEncryptor,
 ) : LaptopPersistence {
     private val storage = HexStorage()
+    private var newlyCreated = false
 
     init {
         val secureDir = File(context.filesDir, SECURE_DIR).apply { mkdirs() }
@@ -33,21 +34,22 @@ class HxsLaptopPersistence @Inject constructor(
         val opened = openOrRebuild(secureBase, dek, userKey)
         if (!opened) throw SecurityException("Failed to open encrypted laptop vault")
 
-        storage.ensureCollection(COLLECTION)
+        check(storage.ensureCollection(COLLECTION)) { "Encrypted collection could not be read; original bytes preserved" }
     }
 
     private fun openOrRebuild(base: String, dek: ByteArray, userKey: ByteArray): Boolean {
-        if (storage.exists(base)) {
-            if (storage.openEncrypted(base, dek, userKey, encryptor)) return true
-            File(base).deleteRecursively()
-            File(base).mkdirs()
+        if (File(base).listFiles()?.isNotEmpty() == true) {
+            if (storage.exists(base) && storage.openEncrypted(base, dek, userKey, encryptor)) return true
+            com.dark.tool_neuron.util.VaultRecovery.preserve(File(base))
+            check(File(base).mkdirs()) { "Cannot create replacement vault" }
         }
+        newlyCreated = true
         return storage.createEncrypted(base, dek, userKey, encryptor)
     }
 
     override fun load(): ByteArray? {
         val rec = storage.getAll(COLLECTION).firstOrNull { it.getString(TAG_RECORD_ID) == RECORD_STATE }
-            ?: return null
+            ?: if (newlyCreated) return null else error("Existing laptop vault has no state record; original bytes preserved")
         return rec.getString(TAG_PAYLOAD).toByteArray(Charsets.UTF_8)
     }
 
@@ -63,16 +65,11 @@ class HxsLaptopPersistence @Inject constructor(
     }
 
     override fun quarantineCorrupt(bytes: ByteArray) {
-        runCatching {
-            storage.getAll(COLLECTION)
-                .filter { it.getString(TAG_RECORD_ID) == RECORD_QUARANTINE }
-                .forEach { storage.delete(COLLECTION, it.id) }
-            storage.put(COLLECTION, HxsRecord.build {
-                putString(TAG_RECORD_ID, RECORD_QUARANTINE)
-                putString(TAG_PAYLOAD, bytes.take(MAX_QUARANTINE_BYTES).toByteArray().toString(Charsets.UTF_8))
-            })
-            storage.flush(COLLECTION)
-        }
+        storage.put(COLLECTION, HxsRecord.build {
+            putString(TAG_RECORD_ID, "$RECORD_QUARANTINE-${java.util.UUID.randomUUID()}")
+            putString(TAG_PAYLOAD, bytes.toString(Charsets.UTF_8))
+        })
+        storage.flush(COLLECTION)
     }
 
     private companion object {

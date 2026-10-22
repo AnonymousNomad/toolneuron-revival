@@ -175,6 +175,7 @@ fun LaptopScreen(
                             Text(d.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             CaptionText("arch: ${d.architecture ?: "unknown"} · artifact: ${d.artifactFileName} (${formatBytes(d.artifactBytes)})")
                             CaptionText("roles: ${d.roles.joinToString(", ").ifEmpty { "none" }} · admissions: ${d.admissions.joinToString(", ").ifEmpty { "none" }}")
+                            CaptionText("qualification: ${d.qualificationVerdict} — no device battery evidence recorded")
                             d.ragStatus?.let { CaptionText("RAG runtime: $it") }
                         }
                     }
@@ -190,6 +191,17 @@ fun LaptopScreen(
                     OutlinedButton(onClick = { viewModel.probeTerminalProvider() }) { Text("Probe terminal provider") }
                     Spacer(Modifier.height(dimens.spacingXs))
                     OutlinedButton(onClick = onOpenTerminal) { Text("Open terminal") }
+                }
+            }
+
+            item(key = "connections") {
+                SectionCard(title = "Connections") {
+                    CaptionText("Local-first. Available providers still require an explicit capability grant.")
+                    viewModel.tools.forEach { tool ->
+                        val observed = if (tool.id == "terminal.execute") terminalProvider.availability.name else tool.status.name
+                        CaptionText("${tool.title}: $observed")
+                    }
+                    CaptionText("No cloud provider fallback. Model download services and the optional HTTP server are configured separately in Settings.")
                 }
             }
 
