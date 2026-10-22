@@ -1,0 +1,40 @@
+{
+  "source": "92d212648c659a219f39b2b1b3fb6cea0765314d",
+  "tests": {
+    "tests": 222,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "fast": "PASS",
+  "slice": "PASS",
+  "release": "PASS",
+  "forcedExactSourceTestBuild": "PASS",
+  "abis": [
+    "arm64-v8a",
+    "x86_64"
+  ],
+  "apkBytes": 110407682,
+  "apkSha256": "de4a11b9bac13b3cf4b79ccbc97767e1520ef3df9c16e0cd438a5aec0f95ccf3",
+  "signerCertificateSha256": "fa6f4eb2390691f3c18115afe8ada0283516f8eabdd74eb54c3b127bf52f53af",
+  "embeddedSourceRevision": "92d212648c659a219f39b2b1b3fb6cea0765314d",
+  "cloudReferenceApkPreserved": true,
+  "cloudReferenceSha256": "1ea9c32bbb20ea531a1a12bc5ff2178c1c18e793a3e0efa6f44b3eac952c4148",
+  "byteIdenticalBuildsDemonstrated": false,
+  "recoveryFixtures": 5,
+  "pr1": {
+    "isDraft": true,
+    "mergedAt": null,
+    "state": "OPEN",
+    "url": "https://github.com/AnonymousNomad/toolneuron-revival/pull/1"
+  },
+  "githubReleaseExists": false,
+  "credentialScan": {
+    "applicationSource": "92d212648c659a219f39b2b1b3fb6cea0765314d",
+    "changedFiles": 136,
+    "credentialFindings": [],
+    "productLocalPathCandidates": [],
+    "disabledTestCandidates": [],
+    "upstreamLicenseUnchanged": true
+  }
+}

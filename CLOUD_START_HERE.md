@@ -1,5 +1,7 @@
 # ToolNeuron Revival — Cloud Start Here
 
+**Cloud lane frozen:** continue with [DEVICE_HANDOFF.md](cloud/DEVICE_HANDOFF.md), not another feature wave. PR #1 remains OPEN/DRAFT/UNMERGED until local rebuild, Samsung acceptance, laptop reconciliation and owner review.
+
 ## Purpose
 This branch is the autonomous continuation lane for ToolNeuron Revival / Covert Edge. It is intended to let a faster/lower-cost reasoning worker carry the project without repeated owner check-ins.
 

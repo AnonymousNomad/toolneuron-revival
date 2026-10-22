@@ -41,5 +41,22 @@
     "discord": "OUTBOX_NOT_SENT_NO_CREDENTIAL",
     "publicDownloadUrl": null
   },
-  "buildCommand": "./gradlew :app:testDebugUnitTest :app:assembleDebug -Ptn.sourceSha=92d212648c659a219f39b2b1b3fb6cea0765314d --no-daemon --console=plain"
+  "buildCommand": "./gradlew :app:testDebugUnitTest :app:assembleDebug -Ptn.sourceSha=92d212648c659a219f39b2b1b3fb6cea0765314d --no-daemon --console=plain",
+  "freezeVerification": {
+    "applicationSourceSha": "92d212648c659a219f39b2b1b3fb6cea0765314d",
+    "rebuildBytes": 110407682,
+    "rebuildSha256": "de4a11b9bac13b3cf4b79ccbc97767e1520ef3df9c16e0cd438a5aec0f95ccf3",
+    "embeddedSourceRevision": "92d212648c659a219f39b2b1b3fb6cea0765314d",
+    "tests": {
+      "tests": 222,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "byteIdenticalBuildsDemonstrated": false,
+    "evidence": "cloud/FINAL_VERIFICATION.json",
+    "primaryDeviceTransfer": "EXACT_SOURCE_REPRODUCTION",
+    "pr1": "OPEN_DRAFT_UNMERGED",
+    "releasePublished": false
+  }
 }

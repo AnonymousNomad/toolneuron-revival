@@ -1,5 +1,9 @@
 # ToolNeuron Revival — Autonomous Cloud Agent Contract
 
+## Current owner override — Cloud lane frozen
+
+The Cloud engineering lane is complete and frozen. Read `cloud/DEVICE_HANDOFF.md` for the next local rebuild/physical Samsung lane. Do not start another feature wave, merge PR #1 or mark it ready. Preserve source-vs-receipt identity, laptop reconciliation, unavailable Covert R0 and all device/publication gates. The earlier autonomous mission instructions below are historical context; this newer owner freeze directive takes precedence.
+
 This repository is being handed to a long-running Codex Cloud worker. Read this file first, then `CLOUD_START_HERE.md`.
 
 ## Authority
