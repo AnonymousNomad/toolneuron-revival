@@ -37,6 +37,9 @@ fun HomeScreen(
     onOpenCreator: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.currentChatId.value?.let(viewModel::selectChat)
+    }
     val lastCrash by InferenceClient.lastCrashInfo.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val dimens = LocalDimens.current

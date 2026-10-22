@@ -45,8 +45,8 @@ class ChatRepository @Inject constructor(
         val opened = openOrRebuild(path, dek, userKey)
         if (!opened) throw SecurityException("Failed to open encrypted chat_store vault")
 
-        storage.ensureCollection(COL_CHATS)
-        storage.ensureCollection(COL_MESSAGES)
+        check(storage.ensureCollection(COL_CHATS)) { "Encrypted collection could not be read; original bytes preserved" }
+        check(storage.ensureCollection(COL_MESSAGES)) { "Encrypted collection could not be read; original bytes preserved" }
         storage.addIndex(COL_CHATS, TAG_ID, HexStorage.WIRE_BYTES)
         storage.addIndex(COL_MESSAGES, TAG_MSG_ID, HexStorage.WIRE_BYTES)
         storage.addIndex(COL_MESSAGES, TAG_MSG_CHAT_ID, HexStorage.WIRE_BYTES)
@@ -54,10 +54,10 @@ class ChatRepository @Inject constructor(
     }
 
     private fun openOrRebuild(base: String, dek: ByteArray, userKey: ByteArray): Boolean {
-        if (storage.exists(base)) {
-            if (storage.openEncrypted(base, dek, userKey, encryptor)) return true
-            File(base).deleteRecursively()
-            File(base).mkdirs()
+        if (File(base).listFiles()?.isNotEmpty() == true) {
+            if (storage.exists(base) && storage.openEncrypted(base, dek, userKey, encryptor)) return true
+            com.dark.tool_neuron.util.VaultRecovery.preserve(File(base))
+            check(File(base).mkdirs()) { "Cannot create replacement vault" }
         }
         return storage.createEncrypted(base, dek, userKey, encryptor)
     }

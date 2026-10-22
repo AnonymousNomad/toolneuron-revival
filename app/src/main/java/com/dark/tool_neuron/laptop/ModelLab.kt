@@ -13,7 +13,15 @@ data class ModelLabObservation(val checkId: String, val prompt: String, val expe
 @Serializable
 data class ModelLabRun(val id: String, val scope: QualificationScope, val batteryId: String,
     val observations: List<ModelLabObservation>, val startedAtMs: Long, val finishedAtMs: Long? = null) {
+    fun validateHistorical() {
+        require(id.matches(Regex("[a-zA-Z0-9_-]{1,80}")) && startedAtMs > 0 && (finishedAtMs == null || finishedAtMs > 0))
+        require(batteryId.length in 1..160 && observations.size <= 100)
+        require(observations.map { it.checkId }.distinct().size == observations.size)
+        require(finishedAtMs != null || observations.isEmpty())
+        observations.forEach { require(it.checkId.length in 1..160 && it.prompt.length <= 16000 && it.expected.length <= 16000 && it.output.length <= 8192 && (it.error?.length ?: 0) <= 400) }
+    }
     fun validate(): EdgeHarnessBattery {
+        validateHistorical()
         require(id.matches(Regex("[a-zA-Z0-9_-]{1,80}")) && startedAtMs > 0 && (finishedAtMs == null || finishedAtMs > 0))
         val definition = EdgeHarnessBatteries.all.single { it.battery.id == batteryId }
         require(observations.map { it.checkId }.distinct().size == observations.size)

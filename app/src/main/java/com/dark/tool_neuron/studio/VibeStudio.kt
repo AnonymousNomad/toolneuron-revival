@@ -171,7 +171,7 @@ class VibeStudio(private val core: LaptopCore, private val workspacesRoot: File,
     }
     private fun root(id: String): File {
         require(core.state.value.workspaces.any { it.id == id }) { "Unknown workspace" }
-        val root = contained(workspacesRoot.canonicalFile, id)
+        val root = com.dark.tool_neuron.util.WorkspacePaths.root(workspacesRoot, id, core.state.value.workspaces.map { it.id }.toSet())
         require(root.isDirectory) { "Workspace directory is missing" }
         return root
     }
@@ -205,7 +205,9 @@ class VibeStudio(private val core: LaptopCore, private val workspacesRoot: File,
     }
     private fun contained(root: File, path: String): File {
         val base = root.canonicalFile
-        val file = File(base, path).canonicalFile
+        val candidate = File(base, path)
+        require(candidate.absoluteFile == candidate.canonicalFile) { "Project symlinks are unsupported" }
+        val file = candidate.canonicalFile
         require(file != base && file.toPath().startsWith(base.toPath())) { "Path leaves the project" }
         return file
     }

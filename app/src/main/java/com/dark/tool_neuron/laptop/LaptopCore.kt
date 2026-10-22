@@ -15,7 +15,7 @@ class LaptopCore(
     val state: StateFlow<CipherLaptop> = _state.asStateFlow()
 
     private fun loadInitial(): CipherLaptop {
-        val raw = runCatching { persistence.load() }.getOrNull()
+        val raw = persistence.load()
         if (raw == null) {
             val fresh = seedFresh()
             persist(fresh)
@@ -29,7 +29,7 @@ class LaptopCore(
             persist(bumped)
             bumped
         } catch (e: LaptopStateError) {
-            runCatching { persistence.quarantineCorrupt(raw) }
+            persistence.quarantineCorrupt(raw)
             val recovered = seedFresh().copy(
                 session = SessionState(
                     createdAtMs = nowMs(),
@@ -244,7 +244,7 @@ class LaptopCore(
 
     fun listWorkspaceFiles(): Result<List<WorkspaceEntry>> = runCatching {
         val ws = activeWorkspace() ?: throw IllegalStateException("no active workspace")
-        val root = File(workspacesBaseDir, ws.id)
+        val root = com.dark.tool_neuron.util.WorkspacePaths.root(workspacesBaseDir, ws.id, _state.value.workspaces.map { it.id }.toSet())
         val out = mutableListOf<WorkspaceEntry>()
         walk(root, root, "", 0, out)
         out.sortBy { it.path }
@@ -255,6 +255,7 @@ class LaptopCore(
         if (depth > 3 || out.size >= MAX_FILE_ENTRIES) return
         val children = dir.listFiles()?.sortedBy { it.name } ?: return
         for (f in children) {
+            if (!com.dark.tool_neuron.util.WorkspacePaths.unaliased(f)) continue
             if (out.size >= MAX_FILE_ENTRIES) return
             val childRel = if (rel.isEmpty()) f.name else "$rel/${f.name}"
             out += WorkspaceEntry(childRel, f.isDirectory, if (f.isFile) f.length() else 0L)
