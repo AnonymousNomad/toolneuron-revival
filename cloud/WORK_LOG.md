@@ -42,3 +42,9 @@ Next mission: TN-CLOUD-00.
 - Fresh-context review: no P0/P1. Fixed stale “Finish to Desktop” copy. Deferred inherited Phase 7 P2s: unlock can bypass incomplete onboarding, and permission persistence failure can leave UI state ahead of durable state. Earlier import process-death orphan cleanup also remains in Phase 7.
 - Engine source prerequisite requested asynchronously; independent reconstruction continues. No Covert runtime operation or overall Phase 0 completion claimed.
 - Next: inference foreground-promotion lifecycle deferral, followed by workstation/Vibe reconciliation.
+
+## Website target correction — 2026-10-22
+- Owner corrected the publication target: ToolNeuron web updates belong in the existing Floot project **Covert Nexus**, project id `01147976-3673-42c7-9220-2d028594ba86`.
+- `AnonymousNomad/anonymousnomad.github.io` is not the ToolNeuron publication destination.
+- Existing Floot project already contains ToolNeuron marketplace/publisher/GameBridge/Foundry/catalog material.
+- Cloud publication instructions were corrected accordingly.
