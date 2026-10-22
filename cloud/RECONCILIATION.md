@@ -6,14 +6,14 @@ the untransferred laptop's version 39 is not evidence that these features exist 
 
 | Laptop delta | Current cloud evidence | Status |
 | --- | --- | --- |
-| Abilities onboarding and Laptop connections | SetupCipherScreen and LaptopScreen exist; the additional onboarding step and connections panel are absent | Reconstruction required |
-| Model Intelligence qualification | ModelRegistry.ModelDossier has a nullable qualification string; semantic roles, runtime support and admissions exist | Preserve existing separation; measured qualification machinery absent |
+| Abilities onboarding and Laptop connections | Shared Abilities screen now follows Cipher; completion persists after the last step; Laptop has a provider-state Connections panel | Reconstructed; app gates passed; device flow not run |
+| Model Intelligence qualification | Typed artifact/runtime/device/battery-bound evidence contract and UNKNOWN dossier projection; semantic roles, runtime support and admissions preserved | Contract reconstructed; measured battery runner still absent |
 | ModGame encoding/proven-cycle copy | No ModGameScreen in this snapshot | No exact source available; inspect the future Vibe/Game entry before reconstructing |
 | Vibe Studio, packs, batteries | No Vibe, battery or harness implementation found in app sources | Reconstruction required |
 | Inference foreground-service deferral | InferenceService.onCreate unconditionally calls startForeground; InferenceClient starts the service before binding | Crash-safety deferral absent; Android lifecycle verification required |
 | Window manager/taskbar/telemetry/boot | DesktopScreen has a tile grid, resident/terminal state and clock; DesktopViewModel has no window manager | Preserve the grid and real states; shell reconstruction required |
 | Covert Engine R0 | No LocalModelBackend, CovertEngineBackend or Covert JNI artifact in source/libs | Required external source/artifact unavailable |
-| Durable GGUF import | importLocalModel originally inserted a CONTENT_URI record without copying | Reconstruction in progress; acceptance requires app gates |
+| Durable GGUF import | importLocalModel now copies to private storage before publishing a FILE row and advances onboarding only on success | Reconstructed in e3d97b5; 7 helper tests and app gates passed; device flow not run |
 | Corrected JNI exports | No Covert JNI source or binary to inspect | Not verified; never substitute a fabricated implementation |
 
 ## External-source checks

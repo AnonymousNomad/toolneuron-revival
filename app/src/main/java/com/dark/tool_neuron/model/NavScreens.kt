@@ -19,6 +19,7 @@ sealed class NavScreens(val route: String) {
     object Cipher : NavScreens("cipher")
     object Desktop : NavScreens("desktop")
     object SetupCipher : NavScreens("setup_cipher")
+    object SetupAbilities : NavScreens("setup_abilities")
     object Abilities : NavScreens("abilities")
     object Knowledge : NavScreens("knowledge")
     object Files : NavScreens("files")

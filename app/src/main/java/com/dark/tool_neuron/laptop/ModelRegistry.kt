@@ -20,6 +20,7 @@ object ModelRegistry {
         val admissions: Set<TaskAdmission>,
         val ragStatus: String?,
         val qualification: String?,
+        val qualificationVerdict: QualificationVerdict = QualificationVerdict.UNKNOWN,
     )
 
     fun dossier(model: ModelInfo, architecture: String?, qualification: String? = null): ModelDossier {

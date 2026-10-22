@@ -31,6 +31,7 @@ import com.dark.tool_neuron.viewmodel.LaptopViewModel
 fun AbilitiesScreen(
     innerPadding: PaddingValues,
     viewModel: LaptopViewModel = hiltViewModel(),
+    onContinue: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val terminalProvider by viewModel.terminalProviderState.collectAsStateWithLifecycle()
@@ -43,13 +44,13 @@ fun AbilitiesScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
                 RetroPanel(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        "ABILITIES — capability contracts available to Cipher",
+                        "Choose what Cipher may do. Abilities start denied; you can change them later. A grant does not install a missing provider or run an action.",
                         fontFamily = RetroMono,
                         color = Retro.TextDim,
                         style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
@@ -95,6 +96,9 @@ fun AbilitiesScreen(
                     }
                 }
             }
+        }
+        onContinue?.let { proceed ->
+            RetroButton(label = "Continue with these permissions", onClick = proceed)
         }
     }
 }

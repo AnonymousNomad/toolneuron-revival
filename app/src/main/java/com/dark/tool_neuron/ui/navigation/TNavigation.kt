@@ -91,6 +91,7 @@ fun TNavigation(
     onSetupComplete: () -> Unit = {},
     onModelSetupComplete: () -> Unit = {},
     onRagSetupComplete: () -> Unit = {},
+    onWorkstationSetupComplete: () -> Unit = {},
 ) {
     val transitions = rememberNavTransitions()
 
@@ -214,6 +215,17 @@ fun TNavigation(
             SetupCipherScreen(
                 innerPadding = innerPadding,
                 onComplete = {
+                    navController.navigate(NavScreens.SetupAbilities.route) {
+                        popUpTo(NavScreens.SetupCipher.route) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(NavScreens.SetupAbilities.route) {
+            AbilitiesScreen(
+                innerPadding = innerPadding,
+                onContinue = {
+                    onWorkstationSetupComplete()
                     navController.navigate(NavScreens.Desktop.route) {
                         popUpTo(0) { inclusive = true }
                     }

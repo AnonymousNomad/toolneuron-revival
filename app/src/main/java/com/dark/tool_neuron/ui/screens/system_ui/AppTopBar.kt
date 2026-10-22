@@ -54,6 +54,7 @@ fun AppTopBar(
         NavScreens.Terminal.route -> TerminalTopBar(onBack = onBack)
         NavScreens.Cipher.route -> CipherTopBar(onBack = onBack)
         NavScreens.SetupCipher.route -> SetupScreenTopBar()
+        NavScreens.SetupAbilities.route -> SetupScreenTopBar()
         NavScreens.Abilities.route -> RetroTopBar(title = "Abilities", onBack = onBack)
         NavScreens.Knowledge.route -> RetroTopBar(title = "Knowledge", onBack = onBack)
         NavScreens.Files.route -> RetroTopBar(title = "Files", onBack = onBack)

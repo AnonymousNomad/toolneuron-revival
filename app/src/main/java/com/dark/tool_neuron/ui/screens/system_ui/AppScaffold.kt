@@ -178,8 +178,7 @@ private fun AppScaffoldInner() {
                         }
                     },
                     onRagSetupComplete = {
-                        scaffoldViewModel.markModelSetupDone()
-                        navController.navigate(NavScreens.HomeScreen.route) {
+                        navController.navigate(NavScreens.SetupCipher.route) {
                             popUpTo(NavScreens.SetupRag.route) { inclusive = true }
                         }
                     },
@@ -220,11 +219,11 @@ private fun AppScaffoldInner() {
                     }
                 },
                 onRagSetupComplete = {
-                    scaffoldViewModel.markModelSetupDone()
                     navController.navigate(NavScreens.SetupCipher.route) {
                         popUpTo(NavScreens.SetupRag.route) { inclusive = true }
                     }
-                }
+                },
+                onWorkstationSetupComplete = scaffoldViewModel::markModelSetupDone,
             )
         }
     }
