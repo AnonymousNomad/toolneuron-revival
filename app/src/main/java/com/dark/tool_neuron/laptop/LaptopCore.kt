@@ -134,6 +134,33 @@ class LaptopCore(
         Unit
     }
 
+    fun bindConversation(workspaceId: String, conversationId: String): Result<Unit> = runCatching {
+        require(conversationId.isNotBlank() && conversationId.length <= 256) { "Invalid conversation id" }
+        mutate { state ->
+            require(state.workspaces.any { it.id == workspaceId }) { "Unknown workspace" }
+            state.copy(activeWorkspaceId = workspaceId, workspaces = state.workspaces.map { workspace ->
+                val remaining = workspace.conversationIds.filterNot { it == conversationId }
+                workspace.copy(conversationIds = if (workspace.id == workspaceId) remaining + conversationId else remaining)
+            })
+        }
+        Unit
+    }
+
+    fun projectForConversation(conversationId: String): WorkspaceRef? =
+        _state.value.workspaces.firstOrNull { conversationId in it.conversationIds }
+
+    fun unbindConversation(conversationId: String, clearSelection: Boolean = false): Result<Unit> = runCatching {
+        mutate { state -> state.copy(activeWorkspaceId = if (clearSelection) null else state.activeWorkspaceId, workspaces = state.workspaces.map {
+            it.copy(conversationIds = it.conversationIds.filterNot { id -> id == conversationId })
+        }) }
+        Unit
+    }
+
+    fun clearActiveWorkspace(): Result<Unit> = runCatching {
+        mutate { it.copy(activeWorkspaceId = null) }
+        Unit
+    }
+
     fun activeWorkspace(): WorkspaceRef? =
         _state.value.activeWorkspaceId?.let { id -> _state.value.workspaces.firstOrNull { it.id == id } }
 
@@ -173,8 +200,12 @@ class LaptopCore(
             createdAtMs = now,
             updatedAtMs = now,
         )
-        mutate { it.copy(tasks = it.tasks + task) }
-        task
+        var saved = task
+        mutate {
+            saved = task.copy(workspaceId = it.activeWorkspaceId)
+            it.copy(tasks = it.tasks + saved)
+        }
+        saved
     }
 
     fun nextStatus(status: TaskStatus): TaskStatus? = when (status) {

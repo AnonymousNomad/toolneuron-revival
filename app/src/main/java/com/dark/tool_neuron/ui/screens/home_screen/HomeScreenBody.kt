@@ -33,6 +33,7 @@ fun HomeScreen(
     actionWindowExpanded: Boolean,
     onActionWindowDismiss: () -> Unit,
     onOpenModelManager: () -> Unit = {},
+    onOpenVibe: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val lastCrash by InferenceClient.lastCrashInfo.collectAsStateWithLifecycle()
@@ -92,6 +93,8 @@ fun HomeScreen(
             RagManager.RetrievalStatus.Reranking -> "Reranking results…"
             RagManager.RetrievalStatus.Idle -> null
         }
+        androidx.compose.foundation.layout.Column {
+        ProjectBindingPanel(viewModel, onOpenVibe)
         ChatMessageList(
             messages = messages,
             streaming = streaming,
@@ -112,6 +115,8 @@ fun HomeScreen(
                 vertical = dimens.spacingMd,
             ),
         )
+
+        }
 
         val deepIndexing by viewModel.deepIndexing.collectAsStateWithLifecycle()
         val raptorBuilding by viewModel.raptorBuilding.collectAsStateWithLifecycle()

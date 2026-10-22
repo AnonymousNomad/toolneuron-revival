@@ -47,18 +47,18 @@ class LaptopLookupService(
     private val workspaceFileContent: (String, String) -> String?,
     private val modelDossiers: () -> List<ModelRegistry.ModelDossier>,
 ) {
-    fun execute(request: LaptopLookupRequest): LaptopLookupResult {
+    fun execute(request: LaptopLookupRequest, workspaceId: String? = core.state.value.activeWorkspaceId): LaptopLookupResult {
         val limit = request.limit.coerceIn(1, 8)
         return when (request.kind) {
-            LookupKind.WORKSPACE_CURRENT -> workspaceCurrent(limit)
-            LookupKind.WORKSPACE_READ -> workspaceRead(request.query)
-            LookupKind.TASK_CURRENT -> taskCurrent()
+            LookupKind.WORKSPACE_CURRENT -> workspaceCurrent(limit, workspaceId)
+            LookupKind.WORKSPACE_READ -> workspaceRead(request.query, workspaceId)
+            LookupKind.TASK_CURRENT -> taskCurrent(workspaceId)
             LookupKind.CAPABILITY_FIND -> capabilityFind(request.query, limit)
             LookupKind.MODEL_FIND -> modelFind(request.query, limit)
             LookupKind.KNOWLEDGE_FIND -> knowledgeFind(request.query, limit)
             LookupKind.PROCEDURE_FIND -> procedureFind(request.query, limit)
             LookupKind.EFFECT_DESCRIBE -> effectDescribe(request.query)
-            LookupKind.EVIDENCE_FIND -> evidenceFind(request.query, limit)
+            LookupKind.EVIDENCE_FIND -> evidenceFind(request.query, limit, workspaceId)
         }
     }
 
@@ -67,8 +67,8 @@ class LaptopLookupService(
         return if (t.length <= cap) t to false else t.take(cap) + "\n[truncated]" to true
     }
 
-    private fun workspaceCurrent(limit: Int): LaptopLookupResult {
-        val ws = core.activeWorkspace()
+    private fun workspaceCurrent(limit: Int, workspaceId: String?): LaptopLookupResult {
+        val ws = core.state.value.workspaces.firstOrNull { it.id == workspaceId }
             ?: return LaptopLookupResult(LookupKind.WORKSPACE_CURRENT.id, emptyList(), "no active workspace", REV, LookupTrust.TRUSTED_SYSTEM, false)
         val files = workspaceFileNames(ws.id).take(limit)
         val truncated = workspaceFileNames(ws.id).size > limit
@@ -80,8 +80,8 @@ class LaptopLookupService(
         return LaptopLookupResult(LookupKind.WORKSPACE_CURRENT.id, listOf(ws.id), bounded, REV, LookupTrust.TRUSTED_SYSTEM, truncated || cut)
     }
 
-    private fun workspaceRead(path: String): LaptopLookupResult {
-        val ws = core.activeWorkspace()
+    private fun workspaceRead(path: String, workspaceId: String?): LaptopLookupResult {
+        val ws = core.state.value.workspaces.firstOrNull { it.id == workspaceId }
             ?: return LaptopLookupResult(LookupKind.WORKSPACE_READ.id, emptyList(), "no active workspace", REV, LookupTrust.PROJECT_DATA, false)
         if (path.isBlank()) {
             return LaptopLookupResult(LookupKind.WORKSPACE_READ.id, emptyList(), "no path given", REV, LookupTrust.PROJECT_DATA, false)
@@ -92,8 +92,8 @@ class LaptopLookupService(
         return LaptopLookupResult(LookupKind.WORKSPACE_READ.id, listOf("${ws.id}/$path"), bounded, REV, LookupTrust.PROJECT_DATA, cut)
     }
 
-    private fun taskCurrent(): LaptopLookupResult {
-        val task = core.state.value.tasks.maxByOrNull { it.updatedAtMs }
+    private fun taskCurrent(workspaceId: String?): LaptopLookupResult {
+        val task = core.state.value.tasks.filter { it.workspaceId == workspaceId }.maxByOrNull { it.updatedAtMs }
             ?: return LaptopLookupResult(LookupKind.TASK_CURRENT.id, emptyList(), "no tasks recorded", REV, LookupTrust.TRUSTED_SYSTEM, false)
         val summary = buildString {
             append("task ").append(task.id).append(" [").append(task.status).append("]")
@@ -195,10 +195,20 @@ class LaptopLookupService(
         return LaptopLookupResult(LookupKind.EFFECT_DESCRIBE.id, listOf(tool.id), bounded, REV, LookupTrust.TRUSTED_SYSTEM, cut)
     }
 
-    private fun evidenceFind(query: String, limit: Int): LaptopLookupResult {
+    private fun evidenceFind(query: String, limit: Int, workspaceId: String?): LaptopLookupResult {
         val st = core.state.value
-        val ev = st.evidence.takeLast(limit).reversed()
-        val vf = st.verifications.takeLast(limit).reversed()
+        val taskIds = st.tasks.filter { it.workspaceId == workspaceId }.map { it.id }.toSet()
+        val scopedEvidence = st.evidence.filter { evidence ->
+            if (evidence.taskId != null) evidence.taskId in taskIds
+            else if (workspaceId == null) evidence.refs.none { it.startsWith("workspace:") }
+            else "workspace:$workspaceId" in evidence.refs
+        }
+        val evidenceIds = scopedEvidence.map { it.id }.toSet()
+        val ev = scopedEvidence.takeLast(limit).reversed()
+        val vf = st.verifications.filter { verification ->
+            if (verification.taskId != null) verification.taskId in taskIds
+            else verification.evidenceId in evidenceIds
+        }.takeLast(limit).reversed()
         if (ev.isEmpty() && vf.isEmpty()) {
             return LaptopLookupResult(LookupKind.EVIDENCE_FIND.id, emptyList(), "no evidence recorded", REV, LookupTrust.PROJECT_DATA, false)
         }

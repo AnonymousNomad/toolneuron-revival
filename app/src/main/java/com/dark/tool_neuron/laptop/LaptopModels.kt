@@ -39,6 +39,7 @@ data class WorkspaceRef(
     val name: String,
     val createdAtMs: Long,
     val metadata: Map<String, String> = emptyMap(),
+    val conversationIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -61,6 +62,7 @@ data class TaskRecord(
     val failureReason: String? = null,
     val createdAtMs: Long,
     val updatedAtMs: Long,
+    val workspaceId: String? = null,
 )
 
 @Serializable

@@ -68,6 +68,7 @@ class ResidentEngine @Inject constructor(
         var turns: Int,
         var lookups: Int,
         var previousIntent: IntentEnvelope?,
+        val workspaceId: String? = null,
         val recentExchanges: ArrayDeque<Pair<String, String>> = ArrayDeque(),
     )
 
@@ -125,7 +126,7 @@ class ResidentEngine @Inject constructor(
             _state.value = ResidentUiState.Unavailable("could not persist resident session: ${it.message}")
             return _state.value
         }
-        session = Session(record.id, identity, model, 0, 0, null)
+        session = Session(record.id, identity, model, 0, 0, null, ws?.id)
         _messages.value = emptyList()
         _streaming.value = ""
         dossierCache = laptop.modelDossiers(modelRepo.models.value)
@@ -138,12 +139,16 @@ class ResidentEngine @Inject constructor(
             appendMessage(Message("system", "Resident is not active. Start it first.", null, null, emptyList(), 0))
             return
         }
+        if (s.workspaceId != laptop.core.state.value.activeWorkspaceId) {
+            appendMessage(Message("system", "Project changed. Stop and restart Cipher to use the selected project without prior project context.", null, null, emptyList(), 0))
+            return
+        }
         val text = userText.trim().take(1500)
         if (text.isEmpty()) return
         appendMessage(Message("user", text, null, null, emptyList(), 0))
 
         dossierCache = laptop.modelDossiers(modelRepo.models.value)
-        val ctx = buildTurnContext()
+        val ctx = buildTurnContext(s.workspaceId)
 
         val turn1 = ResidentContext.buildTurn(text, ctx, emptyList(), s.previousIntent, s.recentExchanges.toList(), finalTurn = false)
         val r1 = generateText(turn1.system, turn1.user, MAX_NEW_TOKENS)
@@ -169,7 +174,7 @@ class ResidentEngine @Inject constructor(
         val lookupResults = mutableListOf<LaptopLookupResult>()
         requested.forEach { (kind, query) ->
             val q = query.ifBlank { if (kind == LookupKind.WORKSPACE_READ) "" else text }
-            lookupResults += lookupService.execute(LaptopLookupRequest(kind, query = q))
+            lookupResults += lookupService.execute(LaptopLookupRequest(kind, query = q), s.workspaceId)
             s.lookups++
         }
 
@@ -321,15 +326,15 @@ class ResidentEngine @Inject constructor(
             )
         }
 
-    private fun buildTurnContext(): ResidentContext.TurnContext {
-        val ws = laptop.core.activeWorkspace()
+    private fun buildTurnContext(workspaceId: String?): ResidentContext.TurnContext {
+        val ws = laptop.core.state.value.workspaces.firstOrNull { it.id == workspaceId }
         val files = ws?.let {
-            laptop.core.listWorkspaceFiles().getOrDefault(emptyList()).take(30).map { e -> e.path }
+            laptop.listWorkspaceEntries(it.id).take(30).map { e -> e.path }
         } ?: emptyList()
         val wsSummary = ws?.let {
             "active workspace: ${it.name} (${it.id}); files: ${files.joinToString(", ").ifEmpty { "(none)" }}"
         }
-        val task = laptop.core.state.value.tasks.maxByOrNull { it.updatedAtMs }
+        val task = laptop.core.state.value.tasks.filter { it.workspaceId == workspaceId }.maxByOrNull { it.updatedAtMs }
         val taskSummary = task?.let { "latest task: ${it.id} [${it.status}] ${it.userObjective.take(160)}" }
         val caps = CapabilityRegistry.SEED.map { cap ->
             "${CapabilityRegistry.ref(cap)} — ${cap.description.take(120)}"

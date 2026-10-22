@@ -70,7 +70,11 @@ class VibeViewModel @Inject constructor(
         }
     }
     fun open(workspaceId: String) {
-        if (!maySwitch()) return
+        if (_busy.value || _editor.value.dirty) {
+            val requested = state.value.workspaces.firstOrNull { it.id == workspaceId }?.name ?: workspaceId
+            message("Could not open $requested. Finish the current action and save or discard edits, then select that project again.")
+            return
+        }
         action { loadProject(workspaceId) }
     }
     private suspend fun loadProject(workspaceId: String) {

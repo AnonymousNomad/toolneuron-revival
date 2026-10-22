@@ -121,11 +121,16 @@ fun TNavigation(
         composable(NavScreens.HomeScreen.route) {
             val activity = LocalContext.current as ComponentActivity
             val homeViewModel: HomeViewModel = hiltViewModel(activity)
+            val studio: com.dark.tool_neuron.viewmodel.VibeViewModel = hiltViewModel(activity)
             HomeScreen(
                 innerPadding = innerPadding,
                 actionWindowExpanded = actionWindowExpanded,
                 onActionWindowDismiss = onActionWindowDismiss,
                 onOpenModelManager = { navController.navigate(NavScreens.ModelManager.route) },
+                onOpenVibe = { projectId ->
+                    studio.open(projectId)
+                    navController.navigate(NavScreens.Vibe.route)
+                },
                 viewModel = homeViewModel,
             )
         }

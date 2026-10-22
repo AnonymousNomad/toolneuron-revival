@@ -1179,3 +1179,5 @@ Whenever you change anything on the list below, update **this file** as part of 
 - Any new "Things NOT to regress" item discovered along the way
 
 If the CLAUDE.md update isn't part of your diff, the change isn't finished.
+
+- Canonical project binding lives only in `WorkspaceRef.conversationIds`; each conversation has at most one owner. Tasks stamp the selected workspace at creation. Chat project selection and structural result cards open that same Vibe workspace, preserving dirty-editor safeguards. Cipher sessions pin their project for context/files/task/evidence lookups and require restart after selection changes; legacy unbound tasks remain in the unbound namespace.
