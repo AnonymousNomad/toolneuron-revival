@@ -1,0 +1,60 @@
+{
+  "schema": "toolneuron-cloud-reference-stack/1",
+  "recorded": "2026-10-22",
+  "repositories": [
+    {
+      "name": "Covert Coder public architecture",
+      "repo": "AnonymousNomad/covert-coder",
+      "revision": "81aff88b924db05c689dc734aa3e67605f4b18ce",
+      "mode": "read-only-reference"
+    },
+    {
+      "name": "GhostCode verification reference",
+      "repo": "AnonymousNomad/Ghostcode",
+      "revision": "213b7f5086664d5e8d8be3583c45acad502341b6",
+      "mode": "read-only-reference"
+    },
+    {
+      "name": "Cyber SOP harness patterns",
+      "repo": "AnonymousNomad/cyber-sop-harness",
+      "revision": "23e643d1013ea3e294356913af6a848149739421",
+      "mode": "read-only-reference"
+    },
+    {
+      "name": "External qualification lab",
+      "repo": "AnonymousNomad/covert-external-qualification-lab",
+      "revision": "b943df8c2167bd404d7c258df5b695a5defb501f",
+      "mode": "read-only-reference"
+    },
+    {
+      "name": "Creation Studio / miniseries reference",
+      "repo": "AnonymousNomad/covert-creation-studio",
+      "revision": "e6b60f3f56f2119c20f1182571065c22e2b47f36",
+      "mode": "read-only-reference"
+    },
+    {
+      "name": "Public website",
+      "repo": "AnonymousNomad/anonymousnomad.github.io",
+      "revision": "582c12c9f6bdf03f9bc08df22cc28429b4dcff10",
+      "mode": "publication-target"
+    },
+    {
+      "name": "Covert Nexus API",
+      "repo": "AnonymousNomad/covert-nexus-api",
+      "revision": null,
+      "note": "repository was empty at handoff; do not invent a dependency on it"
+    }
+  ],
+  "local_only_references": [
+    {
+      "name": "Covert Engine Android R0",
+      "revision": "3020b7f407b61addf872e6aff30d689d71ef0f20",
+      "note": "observed locally; not known to be published in an owner GitHub repo at handoff"
+    },
+    {
+      "name": "ToolNeuron laptop continuation",
+      "revision": "4599afbd956a0f111c471ec82d3c367bb76f9ae0",
+      "note": "clean local worktree observed; exact bytes not uploaded before Desktop Commander quota closed"
+    }
+  ]
+}
