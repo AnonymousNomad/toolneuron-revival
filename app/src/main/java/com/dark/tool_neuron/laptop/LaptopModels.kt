@@ -19,6 +19,7 @@ data class CipherLaptop(
     val procedures: List<ProcedureRef> = emptyList(),
     val permissions: List<PermissionGrant> = emptyList(),
     val resident: ResidentState = ResidentState(),
+    val workstation: WorkstationSession = WorkstationSession(),
 )
 
 @Serializable

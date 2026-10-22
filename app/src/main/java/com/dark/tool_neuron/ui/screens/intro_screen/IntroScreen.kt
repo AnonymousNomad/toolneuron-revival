@@ -22,10 +22,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,6 +46,13 @@ fun IntroScreen(
     innerPadding: PaddingValues,
     onFinish: () -> Unit = {},
 ) {
+    var finished by remember { mutableStateOf(false) }
+    val finishOnce: () -> Unit = {
+        if (!finished) {
+            finished = true
+            onFinish()
+        }
+    }
     var progressTarget by remember { mutableFloatStateOf(0f) }
     val progress by animateFloatAsState(
         targetValue = progressTarget,
@@ -65,7 +74,7 @@ fun IntroScreen(
             delay(PROGRESS_TO_REVEAL_PAUSE_MS)
             revealTarget = 1f
             delay(REVEAL_DURATION_MS.toLong() + REVEAL_HOLD_MS)
-            onFinish()
+            finishOnce()
         }
     }
 
@@ -124,6 +133,7 @@ fun IntroScreen(
                 progress = progress,
                 modifier = Modifier.fillMaxWidth(),
             )
+            TextButton(onClick = finishOnce) { Text("Skip boot") }
         }
     }
 }

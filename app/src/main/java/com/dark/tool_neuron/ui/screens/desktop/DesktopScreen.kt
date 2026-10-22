@@ -2,6 +2,8 @@ package com.dark.tool_neuron.ui.screens.desktop
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,9 +31,11 @@ import com.dark.tool_neuron.laptop.resident.ResidentEngine
 import com.dark.tool_neuron.model.NavScreens
 import com.dark.tool_neuron.ui.icons.TnIcons
 import com.dark.tool_neuron.viewmodel.DesktopViewModel
+import com.dark.download_manager.formatBytes
 
 private data class DesktopTile(val label: String, val icon: ImageVector, val route: String, val note: String? = null)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DesktopScreen(
     innerPadding: PaddingValues,
@@ -42,6 +46,7 @@ fun DesktopScreen(
     val laptopState by viewModel.laptopState.collectAsStateWithLifecycle()
     val terminalProvider by viewModel.terminalProvider.collectAsStateWithLifecycle()
     val clock by viewModel.clock.collectAsStateWithLifecycle()
+    val telemetry by viewModel.telemetry.collectAsStateWithLifecycle()
 
     val activeWorkspace = laptopState.workspaces.firstOrNull { it.id == laptopState.activeWorkspaceId }
 
@@ -68,6 +73,23 @@ fun DesktopScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             RetroHeader(title = "ToolNeuron // Cipher Workstation", right = clock)
+
+            RetroPanel(modifier = Modifier.fillMaxWidth()) {
+                Text("START CENTER", fontFamily = RetroMono, color = Retro.Emerald)
+                Text(
+                    if (activeWorkspace == null) "Choose a model, then create your first project. Your files and terminal share that project."
+                    else "Resume ${activeWorkspace.name}, or open an app below. All project surfaces use the same workspace.",
+                    fontFamily = RetroMono, color = Retro.TextDim, style = MaterialTheme.typography.labelSmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RetroButton("Models", onClick = { onNavigate(NavScreens.ModelStore.route) })
+                    RetroButton("Projects", onClick = { onNavigate(NavScreens.Laptop.route) })
+                    if (activeWorkspace != null) RetroButton("Files", onClick = { onNavigate(NavScreens.Files.route) })
+                }
+                laptopState.workstation.windows.lastOrNull()?.let { recent ->
+                    RetroButton("Resume ${recent.app.title}", onClick = { onNavigate(WorkstationRoutes.route(recent.app)) })
+                }
+            }
 
             RetroPanel(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -124,29 +146,37 @@ fun DesktopScreen(
             }
 
             Surface(color = Retro.Panel, shape = androidx.compose.ui.graphics.RectangleShape, border = androidx.compose.foundation.BorderStroke(1.dp, Retro.Border)) {
-                Row(
+                FlowRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "CIPHER",
+                        text = telemetry.availableMemoryBytes?.let { "RAM free ${formatBytes(it)}" } ?: "RAM --",
                         fontFamily = RetroMono,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Retro.Emerald,
                     )
-                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "LAPTOP ${if (laptopState.session.openCount > 0) "OK" else "--"}",
+                        text = telemetry.batteryPercent?.let { "BATTERY $it%" } ?: "BATTERY --",
                         fontFamily = RetroMono,
                         style = MaterialTheme.typography.labelSmall,
                         color = Retro.TextDim,
                     )
-                    Spacer(Modifier.weight(1f))
                     Text(
-                        text = clock,
+                        text = "THERMAL " + when (telemetry.thermalStatus) {
+                            0 -> "NORMAL"
+                            1 -> "LIGHT"
+                            2 -> "MODERATE"
+                            3 -> "SEVERE"
+                            4 -> "CRITICAL"
+                            5 -> "EMERGENCY"
+                            6 -> "SHUTDOWN"
+                            else -> "--"
+                        },
                         fontFamily = RetroMono,
                         style = MaterialTheme.typography.labelSmall,
                         color = Retro.Emerald,

@@ -67,6 +67,19 @@ class LaptopCore(
     private fun shortId(prefix: String): String =
         "$prefix-" + UUID.randomUUID().toString().replace("-", "").take(10)
 
+    private fun updateWorkstation(update: (WorkstationSession) -> WorkstationSession): Result<Unit> = runCatching {
+        mutate { it.copy(workstation = update(it.workstation)) }
+        Unit
+    }
+
+    fun openWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.open(app) }
+
+    fun minimizeWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.minimize(app) }
+
+    fun closeWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.close(app) }
+
+    fun showWorkstationDesktop(): Result<Unit> = updateWorkstation { it.desktop() }
+
     data class WorkspaceEntry(val path: String, val isDir: Boolean, val bytes: Long)
 
     fun createWorkspace(name: String): Result<WorkspaceRef> = runCatching {

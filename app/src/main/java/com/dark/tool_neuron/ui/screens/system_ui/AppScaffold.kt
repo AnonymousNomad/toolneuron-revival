@@ -1,6 +1,8 @@
 package com.dark.tool_neuron.ui.screens.system_ui
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
@@ -28,6 +30,11 @@ import com.dark.tool_neuron.ui.navigation.TNavigation
 import com.dark.tool_neuron.ui.screens.home_screen.ChatDrawerContent
 import com.dark.tool_neuron.viewmodel.HomeViewModel
 import com.dark.tool_neuron.viewmodel.ScaffoldViewModel
+import com.dark.tool_neuron.viewmodel.WorkstationViewModel
+import com.dark.tool_neuron.laptop.WorkstationApp
+import com.dark.tool_neuron.laptop.WorkstationSession
+import com.dark.tool_neuron.ui.screens.desktop.WorkstationRoutes
+import com.dark.tool_neuron.ui.screens.desktop.WorkstationTaskbar
 import kotlinx.coroutines.launch
 
 @Composable
@@ -45,6 +52,30 @@ private fun AppScaffoldInner() {
 
     val homeViewModel: HomeViewModel = hiltViewModel()
     val scaffoldViewModel: ScaffoldViewModel = hiltViewModel()
+    val workstation: WorkstationViewModel = hiltViewModel()
+    val laptopState by workstation.state.collectAsStateWithLifecycle()
+    val windowStatus by workstation.status.collectAsStateWithLifecycle()
+    val currentApp = WorkstationRoutes.app(currentRoute)
+
+    fun navigateWindow(route: String) {
+        navController.navigate(route, WorkstationRoutes.navigationOptions())
+    }
+
+    fun showWindow(session: WorkstationSession) {
+        navigateWindow(session.focused?.let(WorkstationRoutes::route) ?: NavScreens.Desktop.route)
+    }
+
+    fun minimizeWindow() {
+        val app = currentApp ?: return
+        workstation.minimize(app).onSuccess(::showWindow).onFailure { navigateWindow(NavScreens.Desktop.route) }
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (currentApp != null) workstation.open(currentApp)
+        else if (currentRoute == NavScreens.Desktop.route) workstation.desktop()
+    }
+
+    BackHandler(enabled = WorkstationRoutes.isRoot(currentRoute)) { minimizeWindow() }
     val actionWindowExpanded by homeViewModel.actionWindowExpanded.collectAsStateWithLifecycle()
     val pillState by homeViewModel.pillState.collectAsStateWithLifecycle()
     val chats by homeViewModel.chats.collectAsStateWithLifecycle()
@@ -168,6 +199,29 @@ private fun AppScaffoldInner() {
                 )
             },
             bottomBar = {
+                Column {
+                    if (currentApp != null || currentRoute == NavScreens.Desktop.route) {
+                        WorkstationTaskbar(
+                            session = laptopState.workstation,
+                            current = currentApp,
+                            status = windowStatus,
+                            onOpen = { app ->
+                                workstation.open(app)
+                                navigateWindow(WorkstationRoutes.route(app))
+                            },
+                            onDesktop = {
+                                workstation.desktop()
+                                navigateWindow(NavScreens.Desktop.route)
+                            },
+                            onMinimize = ::minimizeWindow,
+                            onClose = {
+                                currentApp?.let { app ->
+                                    workstation.close(app).onSuccess(::showWindow)
+                                        .onFailure { navigateWindow(NavScreens.Desktop.route) }
+                                }
+                            },
+                        )
+                    }
                 if (!isFullscreen) AppBottomBar(
                     currentRoute = currentRoute,
                     navController = navController,
@@ -194,6 +248,7 @@ private fun AppScaffoldInner() {
                         }
                     },
                 )
+                }
             },
         ) { innerPadding ->
             TNavigation(

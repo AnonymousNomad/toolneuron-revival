@@ -29,6 +29,8 @@ Prebuilt AARs in `libs/`:
 
 ## Build & Release
 
+- **Workstation shell:** window order/minimized/focus state lives in the existing encrypted `CipherLaptop.workstation`; no separate project store. Root Back minimizes; nested Settings routes retain normal Back while showing workstation controls. Window switching pops to Desktop without saved-stack restoration, which could otherwise reopen the minimized app. Persistent domain state survives; transient screen drafts/scroll positions are not guaranteed across switches. Start Center resumes recent app roots. Status uses Android memory/battery/thermal readings with unknown values left unknown; boot has a one-shot Skip action.
+
 - **Laptop persistence boundary:** `LaptopCore.mutate` serializes mutations, validates and saves before publishing StateFlow state. A reported save failure does not publish the proposed permission/task state to collectors. This does not establish transactional disk/crash guarantees for the HXS backend. Abilities displays the operation status, including save errors.
 
 - **Inference service lifecycle:** bind-only `onCreate` initializes channels/backends without foreground promotion. `onStartCommand` promotes explicit starts, handles Android runtime rejection by stopping that start ID, and keeps the STOP teardown path separate. The client remembers explicit foreground intent across crash rebinds and clears it on unbind; bind-only recovery stays bind-only. Manifest service types/permissions and inference backend behavior are unchanged. Physical Android background-start/notification acceptance requires a device run.
