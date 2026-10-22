@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -35,16 +36,17 @@ class WebSearchCoordinator @Inject constructor(
     private val _activeRuns = MutableStateFlow<Set<String>>(emptySet())
     val activeRuns: StateFlow<Set<String>> = _activeRuns.asStateFlow()
 
-    private val jobs = mutableMapOf<String, Job>()
+    private val jobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
     fun start(
         scope: CoroutineScope,
         userQuery: String,
+        loadId: String,
     ): String {
         val runId = "ws_" + UUID.randomUUID().toString()
         markActive(runId, true)
         val job = scope.launch(Dispatchers.IO) {
-            run(runId = runId, userQuery = userQuery)
+            run(runId = runId, userQuery = userQuery, loadId = loadId)
         }
         jobs[runId] = job
         job.invokeOnCompletion {
@@ -62,7 +64,7 @@ class WebSearchCoordinator @Inject constructor(
         jobs.keys.toList().forEach { cancel(it, reason) }
     }
 
-    private suspend fun run(runId: String, userQuery: String) {
+    private suspend fun run(runId: String, userQuery: String, loadId: String) {
         try {
             emit(WebSearchEvent.Plan(runId, userQuery))
 
@@ -71,7 +73,7 @@ class WebSearchCoordinator @Inject constructor(
                 return
             }
 
-            val queries = generateQueries(userQuery).take(MAX_QUERIES)
+            val queries = generateQueries(userQuery, loadId).take(MAX_QUERIES)
             if (queries.isEmpty()) {
                 emit(WebSearchEvent.Failed(runId, "Couldn't generate search queries"))
                 return
@@ -99,7 +101,7 @@ class WebSearchCoordinator @Inject constructor(
             }
 
             emit(WebSearchEvent.SynthesizeStart(runId))
-            val answer = runInference(WebSearchPrompts.synthesize(userQuery, allHits), SYNTHESIZE_MAX_TOKENS)
+            val answer = runInference(WebSearchPrompts.synthesize(userQuery, allHits), SYNTHESIZE_MAX_TOKENS, loadId)
             emit(WebSearchEvent.Done(runId, answer, allHits))
         } catch (ce: CancellationException) {
             _events.tryEmit(WebSearchEvent.Cancelled(runId, ce.message ?: "Cancelled"))
@@ -109,8 +111,8 @@ class WebSearchCoordinator @Inject constructor(
         }
     }
 
-    private suspend fun generateQueries(userQuery: String): List<String> {
-        val raw = runInference(WebSearchPrompts.generateQueries(userQuery), QUERY_GEN_MAX_TOKENS)
+    private suspend fun generateQueries(userQuery: String, loadId: String): List<String> {
+        val raw = runInference(WebSearchPrompts.generateQueries(userQuery), QUERY_GEN_MAX_TOKENS, loadId)
         val parsed = parseQueries(raw)
         // Small chat models (LFM2-350M, Qwen 0.5B) often ignore the "exactly 3
         // numbered" format and emit one terse query or unstructured text. The
@@ -150,20 +152,20 @@ class WebSearchCoordinator @Inject constructor(
         return out
     }
 
-    private suspend fun runInference(prompt: String, maxTokens: Int): String {
+    private suspend fun runInference(prompt: String, maxTokens: Int, loadId: String): String {
         val sb = StringBuilder()
         try {
-            InferenceClient.generate(prompt, maxTokens)
+            InferenceClient.generate(prompt, maxTokens, loadId)
                 .takeWhile { ev ->
                     when (ev) {
                         is InferenceEvent.Token -> { sb.append(ev.text); true }
                         InferenceEvent.Done -> false
-                        is InferenceEvent.Error -> false
+                        is InferenceEvent.Error -> throw IllegalStateException(ev.message)
                         else -> true
                     }
                 }.toList()
         } catch (ce: CancellationException) {
-            runCatching { InferenceClient.stopGeneration() }
+            runCatching { InferenceClient.stopGenerationForLoad(loadId) }
             throw ce
         }
         return sb.toString().trim()
@@ -174,7 +176,7 @@ class WebSearchCoordinator @Inject constructor(
     }
 
     private fun markActive(runId: String, active: Boolean) {
-        _activeRuns.value = if (active) _activeRuns.value + runId else _activeRuns.value - runId
+        _activeRuns.update { if (active) it + runId else it - runId }
     }
 
     companion object {

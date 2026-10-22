@@ -18,6 +18,7 @@ interface IInferenceService {
 
     // Generation
     void generate(String prompt, int maxTokens, IGenerationCallback callback);
+    void generateForLoad(String prompt, int maxTokens, String loadId, IGenerationCallback callback);
     void generateMultiTurn(String messagesJson, int maxTokens, IGenerationCallback callback);
     void generateMultiTurnForLoad(String messagesJson, int maxTokens, String loadId, IGenerationCallback callback);
     void stopGeneration();

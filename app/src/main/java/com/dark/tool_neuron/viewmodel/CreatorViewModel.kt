@@ -23,7 +23,7 @@ data class CreationForm(val name: String, val body: String, val secondary: Strin
 data class CreationExportPreview(val title: String, val json: String, val sha256: String, val manifest: CreationManifest)
 
 @HiltViewModel
-class CreatorViewModel @Inject constructor(private val laptop: LaptopManager, private val app: Application) : ViewModel() {
+class CreatorViewModel @Inject constructor(private val laptop: LaptopManager, private val app: Application, private val security: com.dark.tool_neuron.data.SecurityManager, private val session: com.dark.tool_neuron.data.SessionHolder) : ViewModel() {
     val state = laptop.state
     private val _selectedId = MutableStateFlow(state.value.activeWorkspaceId?.takeIf { id -> state.value.workspaces.any { it.id == id && it.creation != null } }
         ?: state.value.workspaces.lastOrNull { it.creation != null }?.id)
@@ -81,7 +81,9 @@ class CreatorViewModel @Inject constructor(private val laptop: LaptopManager, pr
     fun shareReviewed(preview: CreationExportPreview) = action({
         check(laptop.core.hasPermission(CreationPlan.CAPABILITY)) { "Creator planning permission denied" }
         ChatShareHelper.writeAndShare(app, "toolneuron-creation-${UUID.randomUUID()}.json", preview.json,
-            "application/json", "${preview.title} production plan", "Share reviewed production plan")
+            "application/json", "${preview.title} production plan", "Share reviewed production plan") {
+            (!security.isLockEnabled || session.active.value) && laptop.core.hasPermission(CreationPlan.CAPABILITY) && _preview.value === preview
+        }
     }) { _preview.value = null; _status.value = "Opened system sharing for the reviewed production plan." }
     private fun <T> action(work: () -> T, onError: (String) -> Unit = {}, onSuccess: (T) -> Unit = {}) {
         if (!_busy.compareAndSet(false, true)) {

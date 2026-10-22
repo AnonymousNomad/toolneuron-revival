@@ -58,7 +58,10 @@ fun ModelImportHost(content: @Composable () -> Unit) {
                     }
                     pendingUri = null
                 }
-            }, onDismiss = { pendingUri = null })
+            }, onDismiss = {
+                runCatching { context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                pendingUri = null
+            })
         }
         if (progress != null) AlertDialog(onDismissRequest = {}, title = { Text("Local model import") }, text = {
             val current = progress!!

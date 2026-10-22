@@ -496,6 +496,10 @@ class InferenceService : Service() {
             )
         }
 
+        override fun generateForLoad(prompt: String, maxTokens: Int, loadId: String, callback: IGenerationCallback) {
+            if (loadId.isBlank()) { safeCallback(callback) { it.onError("Missing loaded model identity") }; return }
+            collectLocalFlow(localRuntime.generate(prompt, maxTokens, expectedLoadId = loadId), callback)
+        }
         override fun generateMultiTurnForLoad(messagesJson: String, maxTokens: Int, loadId: String, callback: IGenerationCallback) {
             if (loadId.isBlank()) { safeCallback(callback) { it.onError("Missing loaded model identity") }; return }
             collectLocalFlow(localRuntime.generate(messagesJson, maxTokens, multiTurn = true, expectedLoadId = loadId), callback)

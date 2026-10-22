@@ -20,7 +20,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ModelLabViewModel @Inject constructor(private val app: Application, private val laptop: LaptopManager,
-    private val inspector: CipherAssignmentInspector, private val chatSession: ModelSessionManager) : ViewModel() {
+    private val inspector: CipherAssignmentInspector, private val chatSession: ModelSessionManager, private val security: com.dark.tool_neuron.data.SecurityManager, private val session: com.dark.tool_neuron.data.SessionHolder) : ViewModel() {
     val state = laptop.state
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
@@ -133,7 +133,9 @@ class ModelLabViewModel @Inject constructor(private val app: Application, privat
             try {
                 require(json.toByteArray().size <= 256 * 1024)
                 ChatShareHelper.writeAndShare(app, "toolneuron-model-lab-${UUID.randomUUID()}.json", json,
-                    "application/json", "ToolNeuron Model Lab evidence", "Share reviewed evidence")
+                    "application/json", "ToolNeuron Model Lab evidence", "Share reviewed evidence") {
+                    (!security.isLockEnabled || session.active.value) && laptop.core.hasPermission("model.worker.delegate@1")
+                }
             } catch (failure: Exception) { _status.value = failure.message ?: "Could not share evidence" }
         }
     }

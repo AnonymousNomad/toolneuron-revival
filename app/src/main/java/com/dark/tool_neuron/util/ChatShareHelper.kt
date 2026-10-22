@@ -17,7 +17,9 @@ object ChatShareHelper {
         mimeType: String,
         title: String,
         chooserTitle: String = "Share chat",
+        canShare: () -> Boolean = { true },
     ) {
+        check(canShare()) { "Unlock and review before sharing" }
         val dir = File(context.cacheDir, EXPORT_SUBDIR).apply { mkdirs() }
         val file = File(dir, filename)
         file.writeText(body)
@@ -33,6 +35,7 @@ object ChatShareHelper {
         val chooser = Intent.createChooser(send, chooserTitle).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+        check(canShare()) { "Sharing authority changed; unlock and review again" }
         context.startActivity(chooser)
     }
 }

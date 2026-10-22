@@ -750,6 +750,7 @@ class HomeViewModel @Inject constructor(
 
     private fun startWebSearch(active: ModelInfo, userQuery: String) {
         if (webSearchActive.value) return
+        val loadId = runCatching { modelSession.requireLoadId() }.getOrElse { _projectError.value = it.message; return }
         val chatId = ensureChat(active)
         val isFirstTurn = chatRepo.getMessages(chatId).count { it.role == ROLE_USER } == 1
         val userMessage = ChatMessage(
@@ -781,6 +782,7 @@ class HomeViewModel @Inject constructor(
         val runId = webSearchCoordinator.start(
             scope = viewModelScope,
             userQuery = userQuery,
+            loadId = loadId,
         )
         webSearchMessages[runId] = chatId to cardMessageId
 

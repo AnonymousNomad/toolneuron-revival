@@ -521,7 +521,7 @@ object InferenceClient {
             awaitClose { if (loadId != null && !terminal.get()) runCatching { svc.stopGenerationForLoad(loadId) } }
         }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
-    fun generate(prompt: String, maxTokens: Int): Flow<InferenceEvent> =
+    fun generate(prompt: String, maxTokens: Int, loadId: String? = null): Flow<InferenceEvent> =
         callbackFlow {
             val svc = withTimeoutOrNull(BIND_TIMEOUT_MS) { _service.first { it != null } }
             if (svc == null) {
@@ -537,12 +537,12 @@ object InferenceClient {
                 if (done) close()
             }
             try {
-                svc.generate(prompt, maxTokens, cb)
+                if (loadId == null) svc.generate(prompt, maxTokens, cb) else svc.generateForLoad(prompt, maxTokens, loadId, cb)
             } catch (e: Exception) {
                 trySend(InferenceEvent.Error(e.message ?: "Service error"))
                 close()
             }
-            awaitClose {}
+            awaitClose { if (loadId != null && !terminal.get()) runCatching { svc.stopGenerationForLoad(loadId) } }
         }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     fun stopGeneration() {
