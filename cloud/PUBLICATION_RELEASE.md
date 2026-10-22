@@ -18,9 +18,20 @@ Rules:
 - if credentials are unavailable, write ready-to-send Markdown to ops/outbox/discord/ and continue.
 
 ## Website
-Preferred site repo: AnonymousNomad/anonymousnomad.github.io.
-Add/maintain a ToolNeuron page when cross-repo write access is available.
-Otherwise keep deployable fallback content under site/ in this repo and an exact cross-repo publication note under ops/outbox/site/.
+Canonical website workspace: Floot project **Covert Nexus**.
+Floot project ID: `01147976-3673-42c7-9220-2d028594ba86`.
+
+This project is the canonical public ecosystem/marketplace/community/release/discovery hub for ToolNeuron, Covert Desktop, Covert Engine and related work. ToolNeuron updates belong in this Floot project; `AnonymousNomad/anonymousnomad.github.io` is NOT the ToolNeuron publication target.
+
+Known ToolNeuron-related Floot surfaces already present include marketplace, publisher, games/GameBridge, Foundry research/specs and the shared ecosystem catalog.
+
+When the Cloud worker has Floot access:
+- inspect the live Floot project before editing;
+- update the existing Covert Nexus surfaces rather than creating a competing standalone site;
+- keep ToolNeuron release/version/download/status content synchronized with GitHub evidence;
+- publish through Floot only when the project state and owner authorization permit it.
+
+If the Cloud runtime cannot reach Floot directly, prepare the exact Floot-targeted copy/change plan under `ops/outbox/site/` and continue engineering. Do not redirect the work to GitHub Pages.
 
 Website content:
 - what ToolNeuron Revival is;
