@@ -172,6 +172,20 @@ class LaptopCore(
         Unit
     }
 
+    fun rememberVibeSource(workspaceId: String, path: String): Result<Unit> = runCatching {
+        require(path.length in 1..160 && path.matches(Regex("[A-Za-z0-9_./-]+")) && !path.startsWith('/') &&
+            path.split('/').all { it.isNotEmpty() && !it.startsWith('.') }) { "Invalid source resume path" }
+        mutate { state ->
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.studio.VibeStudio.CAPABILITY && it.granted }) { "Vibe Studio permission denied" }
+            require(state.workspaces.any { it.id == workspaceId }) { "Unknown workspace" }
+            state.copy(activeWorkspaceId = workspaceId, workspaces = state.workspaces.map { workspace ->
+                if (workspace.id != workspaceId) workspace else workspace.copy(metadata = workspace.metadata +
+                    mapOf("vibe.lastSource" to path, "vibe.lastOpenedAt" to nowMs().toString()))
+            })
+        }
+        Unit
+    }
+
     fun bindConversation(workspaceId: String, conversationId: String): Result<Unit> = runCatching {
         require(conversationId.isNotBlank() && conversationId.length <= 256) { "Invalid conversation id" }
         mutate { state ->

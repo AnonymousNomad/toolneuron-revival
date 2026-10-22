@@ -22,6 +22,34 @@ class VibeStudio(private val core: LaptopCore, private val workspacesRoot: File,
             template.files(name).mapKeys { "src/${it.key}" }).getOrThrow()
     }
 
+    @Synchronized fun hasSources(workspaceId: String): Boolean {
+        requireGrant()
+        val project = root(workspaceId)
+        val source = File(project, "src")
+        require(!java.nio.file.Files.isSymbolicLink(source.toPath())) { "Source directory cannot be a symbolic link" }
+        return source.isDirectory
+    }
+
+    @Synchronized fun initialize(workspaceId: String, templateId: String) {
+        requireGrant()
+        val template = VibeTemplates.all.singleOrNull { it.id == templateId } ?: error("Unknown template")
+        val project = root(workspaceId)
+        val target = File(project, "src")
+        check(!target.exists() && !java.nio.file.Files.isSymbolicLink(target.toPath())) { "Source already exists; open it instead of initializing again" }
+        val title = core.state.value.workspaces.single { it.id == workspaceId }.name
+        val staging = java.nio.file.Files.createTempDirectory(project.toPath(), ".vibe-init-").toFile()
+        try {
+            template.files(title).forEach { (path, text) ->
+                validPath(path)
+                val file = contained(staging, path)
+                check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
+                FileOutputStream(file).use { it.write(text.toByteArray(Charsets.UTF_8)); it.fd.sync() }
+            }
+            requireGrant()
+            check(!target.exists() && staging.renameTo(target)) { "Could not publish source; existing project files were preserved" }
+        } finally { staging.deleteRecursively() }
+    }
+
     @Synchronized fun files(workspaceId: String): List<String> {
         requireGrant()
         return sourceFiles(root(workspaceId)).map { it.first }

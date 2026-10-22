@@ -39,6 +39,8 @@ class VibeViewModel @Inject constructor(
     val editor = _editor.asStateFlow()
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
+    private val _pendingSourceProject = MutableStateFlow<String?>(null)
+    val pendingSourceProject = _pendingSourceProject.asStateFlow()
     private val _status = MutableStateFlow<String?>(null)
     val status = _status.asStateFlow()
     private val documents = StudioDocumentQueue()
@@ -48,7 +50,7 @@ class VibeViewModel @Inject constructor(
             combine(session.active, state) { active, s ->
                 (!security.isLockEnabled || active) to s.permissions.any { it.capabilityId == VibeStudio.CAPABILITY && it.granted }
             }.distinctUntilChanged().collect { (_, granted) ->
-                if (!granted) { _editor.value = StudioEditor(); documents.clear() }
+                if (!granted) { _editor.value = StudioEditor(); _pendingSourceProject.value = null; documents.clear() }
                 resumeDocuments()
             }
         }
@@ -75,26 +77,45 @@ class VibeViewModel @Inject constructor(
             message("Could not open $requested. Finish the current action and save or discard edits, then select that project again.")
             return
         }
-        action { loadProject(workspaceId) }
+        action {
+            val hasSources = withContext(Dispatchers.IO) { studio.hasSources(workspaceId) }
+            if (!laptop.core.hasPermission(VibeStudio.CAPABILITY)) return@action
+            if (!hasSources) {
+                _pendingSourceProject.value = workspaceId
+                message("This existing project has no Vibe source yet. Choose a template to initialize it without copying the project.")
+            } else loadProject(workspaceId)
+        }
+    }
+    fun cancelInitialization() { _pendingSourceProject.value = null }
+    fun initializeExisting(templateId: String) {
+        if (!maySwitch()) return
+        val workspace = _pendingSourceProject.value ?: return
+        action {
+            withContext(Dispatchers.IO) { studio.initialize(workspace, templateId) }
+            loadProject(workspace)
+            message("Initialized source in the existing project. Its ID and other files were preserved.")
+        }
     }
     private suspend fun loadProject(workspaceId: String) {
         val loaded = withContext(Dispatchers.IO) {
             val files = studio.files(workspaceId)
-            val path = files.firstOrNull { it == "index.html" } ?: files.firstOrNull {
+            val remembered = state.value.workspaces.firstOrNull { it.id == workspaceId }?.metadata?.get("vibe.lastSource")
+            val path = remembered?.takeIf { it in files } ?: files.firstOrNull { it == "index.html" } ?: files.firstOrNull {
                 it.substringAfterLast('.').lowercase() in setOf("html", "css", "js", "json", "txt", "svg")
             } ?: error("Project has no editable source files")
             val text = studio.read(workspaceId, path)
             check(text.length <= 128_000) { "Source is too large for the editor; use the governed Terminal to reduce it" }
-            laptop.core.openWorkspace(workspaceId).getOrThrow()
+            laptop.core.rememberVibeSource(workspaceId, path).getOrThrow()
             StudioEditor(workspaceId, path, text, files)
         }
         if (!laptop.core.hasPermission(VibeStudio.CAPABILITY)) return
         _editor.value = loaded
+        _pendingSourceProject.value = null
         message("Opened project source. Preview uses a built snapshot.")
     }
     fun isCurrentPreview(workspaceId: String, buildId: String): Boolean =
         laptop.core.hasPermission(VibeStudio.CAPABILITY) && _editor.value.workspaceId == workspaceId &&
-            state.value.vibeBuilds.lastOrNull { it.workspaceId == workspaceId }?.id == buildId
+            state.value.vibeBuilds.any { it.workspaceId == workspaceId && it.id == buildId }
     fun previewMessage(workspaceId: String, buildId: String, text: String) {
         if (isCurrentPreview(workspaceId, buildId)) message(text)
     }
@@ -103,10 +124,12 @@ class VibeViewModel @Inject constructor(
         val current = _editor.value
         val workspace = current.workspaceId ?: return
         action {
-            val text = withContext(Dispatchers.IO) { studio.openSource(workspace, path) } ?: ""
+            val source = withContext(Dispatchers.IO) { studio.openSource(workspace, path) }
+            val text = source ?: ""
             check(text.length <= 128_000) { "Source is too large for the editor; use the governed Terminal to reduce it" }
+            if (source != null) withContext(Dispatchers.IO) { laptop.core.rememberVibeSource(workspace, path).getOrThrow() }
             if (!laptop.core.hasPermission(VibeStudio.CAPABILITY)) return@action
-            _editor.value = current.copy(path = path, text = text, dirty = false)
+            _editor.value = current.copy(path = path, text = text, dirty = source == null)
             message("Opened $path. Save to create or update this source file.")
         }
     }
@@ -114,7 +137,7 @@ class VibeViewModel @Inject constructor(
         val current = _editor.value
         val workspace = current.workspaceId ?: return
         action {
-            val files = withContext(Dispatchers.IO) { studio.save(workspace, current.path, current.text); studio.files(workspace) }
+            val files = withContext(Dispatchers.IO) { studio.save(workspace, current.path, current.text); laptop.core.rememberVibeSource(workspace, current.path).getOrThrow(); studio.files(workspace) }
             if (_editor.value.workspaceId == workspace && laptop.core.hasPermission(VibeStudio.CAPABILITY))
                 _editor.value = current.copy(files = files, dirty = false)
             message("Saved ${current.path}. Rebuild to update the preview.")
