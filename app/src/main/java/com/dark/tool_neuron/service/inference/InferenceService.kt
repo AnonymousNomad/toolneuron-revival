@@ -29,6 +29,7 @@ import com.dark.ai_sd.DiffusionRuntimeConfig
 import com.dark.ai_sd.RuntimeSetupState
 import com.dark.ai_sd.StableDiffusionManager
 import com.dark.ai_sd.UpscaleState
+import com.dark.tool_neuron.runtime.*
 import com.dark.gguf_lib.GGMLEngine
 import com.dark.gguf_lib.ImageQuality
 import com.dark.gguf_lib.RAGEngine
@@ -68,6 +69,9 @@ class InferenceService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val engine = GGMLEngine()
+    private val localRuntime by lazy {
+        LocalRuntimeSession(listOf(GgmlBackend(engine), CovertEngineBackend()), listOf(filesDir))
+    }
     private val ragEngine = RAGEngine()
     private val ragLock = Any()
     private val ttsLock = Any()
@@ -327,7 +331,7 @@ class InferenceService : Service() {
         try { engine.stopGeneration() } catch (_: Throwable) {}
         try {
             runBlocking(Dispatchers.IO) {
-                if (engine.isLoaded) engine.unload()
+                localRuntime.unload()
             }
         } catch (_: Throwable) {}
         try { engine.releaseVlmProjector() } catch (_: Throwable) {}
@@ -370,51 +374,24 @@ class InferenceService : Service() {
         override fun loadModel(modelPath: String, configJson: String, callback: IModelLoadCallback) {
             scope.launch {
                 try {
-                    logDeviceProfile()
-                    val modelSize = File(modelPath).length()
-                    val memAvail = readMemAvailableBytes()
-                    Log.i(TAG, "loadModel path=$modelPath sizeMb=${modelSize / (1024 * 1024)} memAvailMb=${memAvail / (1024 * 1024)}")
-                    if (memAvail in 1 until (modelSize * 6 / 5)) {
-                        val msg = "Not enough free memory: model needs ~${modelSize / (1024 * 1024)} MB, " +
-                            "device has ~${memAvail / (1024 * 1024)} MB free. Close other apps or pick a smaller quant."
-                        captureKt("loadModel", "path=$modelPath", "InsufficientRam", msg)
-                        safeCallback(callback) { it.onError(msg) }
-                        return@launch
-                    }
-
-                    val unsupportedQuant = detectUnsupportedQuantization(modelPath)
-                    if (unsupportedQuant != null) {
-                        captureKt("loadModel", "path=$modelPath", "UnsupportedQuant", unsupportedQuant)
-                        safeCallback(callback) { it.onError(unsupportedQuant) }
-                        return@launch
-                    }
-
-                    if (engine.isLoaded) engine.unload()
                     val config = parseConfig(configJson)
-                    // Stash the user's thread-mode preference BEFORE load so the
-                    // single apply_thread_mode that runs during ctx construction
-                    // picks the right pool. Without this, load would build the
-                    // pool for the default mode (1) and a post-load setThreadMode
-                    // would tear it down and rebuild — wasting ~50 ms per load.
-                    engine.setThreadMode(config.optInt("threadMode", 1))
-                    val success = engine.load(
-                        path = modelPath,
-                        contextSize = config.optInt("contextSize", 4096),
-                        flashAttn = config.optBoolean("flashAttn", true),
-                        cacheTypeK = config.optString("cacheTypeK", "q8_0"),
-                        cacheTypeV = config.optString("cacheTypeV", "q8_0"),
-                    )
-                    if (success) {
-                        applySamplingFromConfig(config)
-                        updateNotification("Model loaded")
-                        safeCallback(callback) { it.onSuccess(engine.getModelInfoJson() ?: "{}") }
-                    } else {
-                        val msg = "Model load returned false"
-                        captureKt("loadModel", "path=$modelPath", "ModelLoad", msg)
-                        safeCallback(callback) { it.onError(msg) }
+                    val runtimeId = config.optString("runtimeId", GgmlBackend.ID)
+                    val info = localRuntime.load(runtimeId, modelPath, loadOptions(config)) { file ->
+                        logDeviceProfile()
+                        val modelSize = file.length()
+                        val memAvail = readMemAvailableBytes()
+                        Log.i(TAG, "loadModel path=$modelPath sizeMb=${modelSize / (1024 * 1024)} memAvailMb=${memAvail / (1024 * 1024)}")
+                        check(memAvail !in 1 until (modelSize * 6 / 5)) {
+                            "Not enough free memory: model needs ~${modelSize / (1024 * 1024)} MB, " +
+                                "device has ~${memAvail / (1024 * 1024)} MB free. Close other apps or pick a smaller quant."
+                        }
+                        detectUnsupportedQuantization(file.path)?.let { error(it) }
                     }
+                    applySamplingFromConfig(config)
+                    updateNotification("Model loaded · $runtimeId")
+                    safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId)) }
                 } catch (e: OutOfMemoryError) {
-                    try { engine.unload() } catch (_: Throwable) {}
+                    try { localRuntime.unload() } catch (_: Throwable) {}
                     captureKt("loadModel", "path=$modelPath", "OOM",
                         "JVM out of memory while loading the model. Try a smaller quant or lower Context Size.")
                     safeCallback(callback) { it.onError("Out of memory") }
@@ -426,6 +403,16 @@ class InferenceService : Service() {
         }
 
         override fun loadModelFromFd(pfd: ParcelFileDescriptor, configJson: String, callback: IModelLoadCallback) {
+            val config = parseConfig(configJson)
+            val runtimeId = config.optString("runtimeId", GgmlBackend.ID)
+            if (runtimeId != GgmlBackend.ID) {
+                scope.launch {
+                    try { localRuntime.loadLegacyDescriptor(runtimeId, -1, loadOptions(config)) }
+                    catch (failure: Exception) { safeCallback(callback) { it.onError(failure.message ?: "Runtime unavailable") } }
+                    finally { try { pfd.close() } catch (_: Exception) {} }
+                }.invokeOnCompletion { try { pfd.close() } catch (_: Exception) {} }
+                return
+            }
             val unsupportedQuant = try {
                 pfd.dup().use { dup ->
                     val message = FileInputStream(dup.fileDescriptor).use { stream ->
@@ -448,54 +435,38 @@ class InferenceService : Service() {
                 try { pfd.close() } catch (_: Exception) {}
                 return
             }
-            val fd = pfd.detachFd()
             scope.launch {
                 try {
-                    if (engine.isLoaded) engine.unload()
-                    val config = parseConfig(configJson)
-                    // See loadModel above — pre-set thread mode to avoid the
-                    // post-load threadpool rebuild.
-                    engine.setThreadMode(config.optInt("threadMode", 1))
-                    val success = engine.loadFromFd(
-                        fd = fd,
-                        contextSize = config.optInt("contextSize", 4096),
-                        flashAttn = config.optBoolean("flashAttn", true),
-                        cacheTypeK = config.optString("cacheTypeK", "q8_0"),
-                        cacheTypeV = config.optString("cacheTypeV", "q8_0"),
-                    )
-                    if (success) {
-                        applySamplingFromConfig(config)
-                        updateNotification("Model loaded")
-                        safeCallback(callback) { it.onSuccess(engine.getModelInfoJson() ?: "{}") }
-                    } else {
-                        safeCallback(callback) { it.onError("Failed to load model from FD") }
-                    }
+                    val info = localRuntime.loadLegacyDescriptor(runtimeId, loadOptions(config)) { pfd.detachFd() }
+                    applySamplingFromConfig(config)
+                    updateNotification("Model loaded · $runtimeId")
+                    safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId)) }
                 } catch (e: OutOfMemoryError) {
-                    try { engine.unload() } catch (_: Throwable) {}
+                    try { localRuntime.unload() } catch (_: Throwable) {}
                     safeCallback(callback) { it.onError("Out of memory") }
                 } catch (e: Exception) {
                     safeCallback(callback) { it.onError(e.message ?: "Unknown error") }
                 }
-            }
+            }.invokeOnCompletion { try { pfd.close() } catch (_: Exception) {} }
         }
 
         override fun unloadModel() {
             scope.launch {
-                if (engine.isLoaded) engine.unload()
+                localRuntime.unload()
                 updateNotification("Inference ready")
             }
         }
 
-        override fun isModelLoaded(): Boolean = engine.isLoaded
+        override fun isModelLoaded(): Boolean = engine.isLoaded && localRuntime.status.value.phase in setOf(LocalRuntimePhase.READY, LocalRuntimePhase.GENERATING)
 
-        override fun getModelInfo(): String? = engine.getModelInfoJson()
+        override fun getModelInfo(): String? = if (isModelLoaded()) runtimeInfo(engine.getModelInfoJson() ?: "{}", localRuntime.status.value.loadedRuntime ?: GgmlBackend.ID) else null
 
         override fun generate(prompt: String, maxTokens: Int, callback: IGenerationCallback) {
-            collectFlow(engine.generateFlow(prompt, maxTokens), callback)
+            collectLocalFlow(localRuntime.generate(prompt, maxTokens), callback)
         }
 
         override fun generateMultiTurn(messagesJson: String, maxTokens: Int, callback: IGenerationCallback) {
-            collectFlow(engine.generateMultiTurnFlow(messagesJson, maxTokens), callback)
+            collectLocalFlow(localRuntime.generate(messagesJson, maxTokens, multiTurn = true), callback)
         }
 
         override fun compactConversation(messagesJson: String, maxTokens: Int, callback: IGenerationCallback) {
@@ -515,15 +486,15 @@ class InferenceService : Service() {
                 try { callback.onError("invalid messages json: ${e.message}") } catch (_: Exception) {}
                 return
             }
-            collectFlow(
-                flow = engine.generateMultiTurnFlow(augmented, maxTokens),
+            collectLocalFlow(
+                flow = localRuntime.generate(augmented, maxTokens, multiTurn = true),
                 callback = callback,
                 onComplete = { try { engine.resetKvCache() } catch (_: Throwable) {} },
             )
         }
 
         override fun stopGeneration() {
-            engine.stopGeneration()
+            localRuntime.cancel()
         }
 
         override fun setSampling(samplingJson: String) {
@@ -557,7 +528,7 @@ class InferenceService : Service() {
         override fun getVlmKvCacheStatsJson(): String = engine.vlmKvCacheStatsJson()
 
         override fun supportsThinking(): Boolean =
-            engine.isLoaded && engine.supportsThinking()
+            legacyGgmlReady() && engine.isLoaded && engine.supportsThinking()
 
         override fun setThinkingEnabled(enabled: Boolean) {
             engine.setThinkingEnabled(enabled)
@@ -567,7 +538,7 @@ class InferenceService : Service() {
             engine.setPromptCacheDir(path)
         }
 
-        override fun warmUp(): Boolean = engine.warmUp()
+        override fun warmUp(): Boolean = legacyGgmlReady() && engine.warmUp()
 
         override fun setThreadMode(mode: Int) {
             engine.setThreadMode(mode)
@@ -577,9 +548,10 @@ class InferenceService : Service() {
 
         override fun stateSaveToFile(path: String): Boolean = engine.stateSaveToFile(path)
 
-        override fun stateLoadFromFile(path: String): Boolean = engine.stateLoadFromFile(path)
+        override fun stateLoadFromFile(path: String): Boolean = legacyGgmlReady() && engine.stateLoadFromFile(path)
 
         override fun loadVlmProjector(path: String, threads: Int, imageMinTokens: Int, imageMaxTokens: Int): Boolean {
+            if (!legacyGgmlReady()) return false
             val ok = runBlocking(Dispatchers.IO) {
                 engine.loadVlmProjector(path, threads, imageMinTokens, imageMaxTokens)
             }
@@ -591,6 +563,10 @@ class InferenceService : Service() {
         }
 
         override fun loadVlmProjectorFromFd(pfd: ParcelFileDescriptor, threads: Int, imageMinTokens: Int, imageMaxTokens: Int): Boolean {
+            if (!legacyGgmlReady()) {
+                try { pfd.close() } catch (_: Exception) {}
+                return false
+            }
             val fd = pfd.detachFd()
             val ok = runBlocking(Dispatchers.IO) {
                 engine.loadVlmProjectorFromFd(fd, threads, imageMinTokens, imageMaxTokens)
@@ -608,9 +584,9 @@ class InferenceService : Service() {
             loadedImageMaxTokens = -1
         }
 
-        override fun isVlmLoaded(): Boolean = engine.isVlmLoaded
+        override fun isVlmLoaded(): Boolean = legacyGgmlReady() && engine.isVlmLoaded
 
-        override fun getVlmInfo(): String? = engine.getVlmInfoJson()
+        override fun getVlmInfo(): String? = if (legacyGgmlReady()) engine.getVlmInfoJson() else null
 
         override fun getVlmDefaultMarker(): String = engine.getVlmDefaultMarker()
 
@@ -621,6 +597,11 @@ class InferenceService : Service() {
             imageQuality: Int,
             callback: IGenerationCallback,
         ) {
+            if (!legacyGgmlReady()) {
+                imageFds?.forEach { try { it.close() } catch (_: Exception) {} }
+                safeCallback(callback) { it.onError(localRuntime.status.value.error ?: "The selected runtime is not ready for VLM") }
+                return
+            }
             val images: List<ByteArray> = try {
                 imageFds
                     ?.map { pfd ->
@@ -639,18 +620,22 @@ class InferenceService : Service() {
                 images.map { engine.computeVtKey(it, projector, maxImageTokens) }
             } else null
             collectFlow(
-                engine.generateVlmFlow(
+                localRuntime.legacyGeneration(GgmlBackend.ID) { engine.generateVlmFlow(
                     messagesJson = messagesJson,
                     imageData = images,
                     maxTokens = maxTokens,
                     vtKeys = vtKeys,
                     imageQuality = quality,
-                ),
+                ) },
                 callback,
             )
         }
 
         override fun precomputeVlmVision(pfd: ParcelFileDescriptor, imageQuality: Int): Boolean {
+            if (!legacyGgmlReady()) {
+                try { pfd.close() } catch (_: Exception) {}
+                return false
+            }
             val projector = loadedProjectorPath ?: return false
             val maxImageTokens = loadedImageMaxTokens
             val bytes = try {
@@ -1172,6 +1157,52 @@ class InferenceService : Service() {
             }
         }
 
+    }
+
+    private fun legacyGgmlReady(): Boolean = localRuntime.status.value.let {
+        it.requestedRuntime == GgmlBackend.ID && it.loadedRuntime == GgmlBackend.ID &&
+            it.phase in setOf(LocalRuntimePhase.READY, LocalRuntimePhase.GENERATING)
+    }
+
+    private fun loadOptions(config: JSONObject) = LocalLoadOptions(
+        contextSize = config.optInt("contextSize", 4096),
+        threadMode = config.optInt("threadMode", 1),
+        flashAttention = config.optBoolean("flashAttn", true),
+        cacheTypeK = config.optString("cacheTypeK", "q8_0"),
+        cacheTypeV = config.optString("cacheTypeV", "q8_0"),
+    )
+
+    private fun runtimeInfo(info: String, runtimeId: String): String =
+        (try { JSONObject(info) } catch (_: Exception) { JSONObject() })
+            .put("runtimeId", runtimeId).toString()
+
+    private fun collectLocalFlow(
+        flow: Flow<LocalGenerationEvent>,
+        callback: IGenerationCallback,
+        onComplete: () -> Unit = {},
+    ) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                flow.collect { event ->
+                    when (event) {
+                        is LocalGenerationEvent.Token -> callback.onToken(event.text)
+                        is LocalGenerationEvent.Done -> callback.onDone()
+                        is LocalGenerationEvent.Error -> callback.onError(event.message)
+                        is LocalGenerationEvent.Metrics -> callback.onMetrics(JSONObject(event.values).toString())
+                        is LocalGenerationEvent.Progress -> callback.onProgress(event.value)
+                    }
+                }
+            } catch (_: DeadObjectException) {
+                localRuntime.cancel()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                localRuntime.cancel()
+                throw cancelled
+            } catch (failure: Exception) {
+                try { callback.onError(failure.message ?: "Runtime generation failed") } catch (_: Exception) {}
+            } finally {
+                try { onComplete() } catch (_: Throwable) {}
+            }
+        }
     }
 
     private fun collectFlow(

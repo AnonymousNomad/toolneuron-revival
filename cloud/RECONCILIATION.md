@@ -12,7 +12,7 @@ the untransferred laptop's version 39 is not evidence that these features exist 
 | Vibe Studio, packs, batteries | No Vibe, battery or harness implementation found in app sources | Reconstruction required |
 | Inference foreground-service deferral | Promotion moved to explicit onStartCommand, rejected starts stopped, explicit foreground intent retained across crash rebind | Reconstructed; compiler/JVM/APK gates passed; Android lifecycle acceptance NOT TESTED |
 | Window manager/taskbar/telemetry/boot | Canonical persisted windows/taskbar, minimize/close/reopen, Start Center, sampled Android telemetry and one-shot boot skip | Reconstructed; 8 JVM state/navigation-policy checks; physical layout/navigation NOT TESTED |
-| Covert Engine R0 | Owner supplied dependency branch `covert-engine-android-contract` and `cloud/ENGINE_DEPENDENCY.md`; backend integration remains next | Production-native gate BLOCKED_LOCAL_SOURCE_UNAVAILABLE; ToolNeuron contract work can continue |
+| Covert Engine R0 | Backend-neutral session, existing GGML adapter, explicit per-model selection and unavailable Covert boundary; text/VLM guards and contract-double lifecycle tests | ToolNeuron-side boundary reconstructed; production-native gate BLOCKED_LOCAL_SOURCE_UNAVAILABLE |
 | Durable GGUF import | importLocalModel now copies to private storage before publishing a FILE row and advances onboarding only on success | Reconstructed in e3d97b5; 7 helper tests and app gates passed; device flow not run |
 | Corrected JNI exports | No Covert JNI source or binary to inspect | Not verified; never substitute a fabricated implementation |
 

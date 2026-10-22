@@ -67,6 +67,8 @@ fun ModelConfigScreen(
         try { JSONObject(initialConfig?.inferenceParamsJson ?: "{}") } catch (_: Exception) { JSONObject() }
     }
 
+    var runtimeId by remember { mutableStateOf(loadingJson.optString("runtimeId", "ggml")) }
+
     // Loading
     var contextSize by remember { mutableIntStateOf(loadingJson.optInt("contextSize", 4096)) }
     var threadMode by remember { mutableIntStateOf(loadingJson.optInt("threadMode", 0)) }
@@ -124,6 +126,7 @@ fun ModelConfigScreen(
     var showMemory by remember { mutableStateOf(false) }
 
     fun resetToDefaults() {
+        runtimeId = "ggml"
         contextSize = 4096; threadMode = 0; flashAttn = false
         cacheTypeK = "q8_0"; cacheTypeV = "q8_0"
         temperature = 0.7f; topK = 40; topP = 0.9f; minP = 0.05f
@@ -142,6 +145,7 @@ fun ModelConfigScreen(
         when (modelInfo.providerType) {
             ProviderType.UNKNOWN -> {}
             ProviderType.GGUF -> {
+                loading.put("runtimeId", runtimeId)
                 loading.put("contextSize", contextSize)
                 loading.put("threadMode", threadMode)
                 loading.put("flashAttn", flashAttn)
@@ -277,6 +281,15 @@ fun ModelConfigScreen(
                         Spacer(Modifier.height(dimens.spacingSm))
                         StandardCard(title = "Loading") {
                             Column(verticalArrangement = Arrangement.spacedBy(dimens.spacingMd)) {
+                                ConfigToggleGroup(
+                                    label = "Local runtime",
+                                    items = listOf("ggml", "covert-r0"),
+                                    selected = runtimeId,
+                                    onSelect = { runtimeId = it },
+                                    explanation = if (runtimeId == "covert-r0")
+                                        "Covert Engine R0 is unavailable in this build: production native source has not been transferred. Loading will fail explicitly; no fallback is used."
+                                    else "Existing GGML / llama.cpp runtime. Qualification and device fit are separate checks.",
+                                )
                                 ConfigSlider(
                                     label = "Context Size",
                                     value = contextSize.toFloat(),
