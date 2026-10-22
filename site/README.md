@@ -1,17 +1,23 @@
-# ToolNeuron Revival web surface
+# ToolNeuron web publication handoff
 
-Preferred public target: AnonymousNomad/anonymousnomad.github.io.
+The canonical website is **not GitHub Pages**.
 
-If Cloud has cross-repo write access, maintain a ToolNeuron Revival page there. Otherwise build a deployable static page in this directory and leave the cross-repo publication artifact in ops/outbox/site/.
+Canonical Floot project:
+- Name: `Covert Nexus`
+- Project ID: `01147976-3673-42c7-9220-2d028594ba86`
 
-Required sections:
-1. ToolNeuron Revival / Covert Edge identity and upstream attribution.
-2. What it does: Cipher, Laptop, Vibe Studio, local models, Model Lab, Creator.
-3. Current release/version and GitHub release link.
-4. Verified capability evidence.
-5. Known limitations and development/beta label.
-6. Screenshots/evidence if available.
-7. GitHub/community links.
-8. Changelog/recent milestones.
+Covert Nexus is the existing shared ecosystem/marketplace/community/release/discovery site for ToolNeuron, Covert Desktop, Covert Engine and related work.
 
-No invented download URLs, compatibility claims, performance figures or release status.
+ToolNeuron material already exists in the Floot project across marketplace, publisher, games/GameBridge, Foundry notes/specifications and the shared catalog.
+
+Cloud workers should:
+1. inspect the current Floot project before editing;
+2. extend the existing Covert Nexus surfaces;
+3. keep ToolNeuron release/version/download/status information aligned with GitHub evidence;
+4. preserve the shared catalog/taxonomy and existing package identities;
+5. avoid fabricating download/installability/verification claims;
+6. publish through Floot only when the worker has the required Floot access and the release state is eligible.
+
+If direct Floot access is unavailable, place exact proposed Floot changes/copy under `ops/outbox/site/`. This directory is an outbox/fallback only; it is not a replacement website.
+
+Do not publish ToolNeuron to `AnonymousNomad/anonymousnomad.github.io` as a substitute.
