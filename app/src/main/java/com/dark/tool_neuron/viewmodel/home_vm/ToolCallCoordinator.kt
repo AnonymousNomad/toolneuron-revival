@@ -26,16 +26,17 @@ private const val ROLE_TOOL = "tool"
 class ToolCallCoordinator @Inject constructor(
     private val pluginRegistry: PluginRegistry,
     private val pluginPrefs: PluginPrefsRepository,
+    private val modelSession: ModelSessionManager,
 ) {
     fun enabledTools(): List<ToolDef> =
         pluginRegistry.enabledToolDefs(pluginPrefs.enabledIds())
 
-    fun configureInference(webOn: Boolean, userSystemPrompt: String): List<ToolDef> {
+    fun configureInference(webOn: Boolean, userSystemPrompt: String, thinking: Boolean): List<ToolDef> {
         val tools = if (webOn) enabledTools() else emptyList()
         Log.i(TAG, "configureInference: webOn=$webOn tools=${tools.map { it.name }}")
         if (tools.isEmpty()) {
             InferenceClient.clearTools()
-            InferenceClient.setSystemPrompt(userSystemPrompt)
+            modelSession.configureChat(thinking, userSystemPrompt)
             return tools
         }
         val toolsJson = Json.encodeToString(JsonArray.serializer(), toOpenAiFormat(tools))
@@ -44,7 +45,7 @@ class ToolCallCoordinator @Inject constructor(
         } else {
             "$userSystemPrompt\n\n$TOOL_USE_GUIDANCE"
         }
-        InferenceClient.setSystemPrompt(combined)
+        modelSession.configureChat(thinking, combined)
         InferenceClient.enableToolCalling(toolsJson)
         return tools
     }

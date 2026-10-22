@@ -3,7 +3,7 @@ package com.dark.tool_neuron.viewmodel.home_vm
 sealed interface ModelLoadState {
     data object Idle : ModelLoadState
     data class Loading(val modelId: String) : ModelLoadState
-    data class Active(val modelId: String) : ModelLoadState
+    data class Active(val modelId: String, val loadId: String) : ModelLoadState
     data class Error(val modelId: String, val message: String) : ModelLoadState
 }
 

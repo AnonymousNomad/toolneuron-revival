@@ -18,6 +18,34 @@ class LocalRuntimeSessionTest {
     @get:Rule val temp = TemporaryFolder()
     private fun model() = temp.newFile().apply { writeBytes("GGUFpayload".toByteArray()) }
 
+    @Test fun staleConfigurationCannotMutateOrInvalidateTheReplacement() = runBlocking {
+        val backend = ContractBackend()
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        session.load(backend.id, model().path, loadId = "replacement")
+        var mutated = false
+        assertTrue(runCatching { session.configureForLoad(backend.id, "old") { mutated = true } }.isFailure)
+        assertFalse(mutated)
+        assertEquals("replacement", session.status.value.loadId)
+        assertEquals(LocalRuntimePhase.READY, session.status.value.phase)
+        val next = session.configureForLoad(backend.id, "replacement") { mutated = true }
+        assertTrue(mutated)
+        assertEquals(next, session.status.value.loadId)
+        assertNotEquals("replacement", next)
+    }
+    @Test fun staleCancellationCannotStopReplacementGeneration() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val backend = ContractBackend(events = flow { started.complete(Unit); finish.await(); emit(LocalGenerationEvent.Done) })
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        session.load(backend.id, model().path, loadId = "replacement")
+        val running = launch { session.generate("prompt", 2, expectedLoadId = "replacement").toList() }
+        withTimeout(1000) { started.await() }
+        session.cancelForLoad("old")
+        assertTrue(running.isActive)
+        session.cancelForLoad("replacement")
+        running.join()
+        assertTrue(running.isCancelled)
+    }
     @Test fun unavailableCovertNeverInvokesTheExistingBackend() = runBlocking {
         val existing = ContractBackend()
         val session = LocalRuntimeSession(listOf(existing, CovertEngineBackend()), listOf(temp.root))

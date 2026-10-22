@@ -27,6 +27,7 @@ data class LocalRuntimeStatus(
 class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRoots: List<File>) {
     private val backends = backends.associateBy { it.id }.also { require(it.size == backends.size) }
     private val mutex = Mutex()
+    @Volatile private var generationOwner: Pair<String?, kotlinx.coroutines.Job>? = null
     @Volatile private var active: LocalModelBackend? = null
     private val _status = MutableStateFlow(LocalRuntimeStatus())
     val status = _status.asStateFlow()
@@ -103,8 +104,8 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
             }.onCompletion { cleanup() }
         }
 
-    fun <T> legacyGeneration(runtimeId: String, source: () -> Flow<T>): Flow<T> =
-        guardedGeneration(runtimeId, null) { source() }
+    fun <T> legacyGeneration(runtimeId: String, expectedLoadId: String? = null, source: () -> Flow<T>): Flow<T> =
+        guardedGeneration(runtimeId, expectedLoadId) { source() }
 
     private fun <T> guardedGeneration(runtimeId: String?, expectedLoadId: String?, source: (LocalModelBackend) -> Flow<T>): Flow<T> = flow {
         check(mutex.tryLock()) { "Another local runtime operation is active" }
@@ -115,6 +116,7 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
                 _status.value.error ?: "No selected runtime is ready"
             }
             check(expectedLoadId == null || expectedLoadId == _status.value.loadId) { "Loaded model or configuration changed; reload explicitly" }
+            generationOwner = _status.value.loadId to checkNotNull(kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job])
             _status.value = _status.value.copy(phase = LocalRuntimePhase.GENERATING, error = null)
             var completed = false
             try {
@@ -122,27 +124,36 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
                 completed = true
             } finally {
                 try { if (!completed) backend.cancel() }
-                finally { _status.value = _status.value.copy(phase = LocalRuntimePhase.READY) }
+                finally { generationOwner = null; _status.value = _status.value.copy(phase = LocalRuntimePhase.READY) }
             }
         } finally { mutex.unlock() }
     }
 
-    fun <T> configure(runtimeId: String, allowEmpty: Boolean = false, action: () -> T): T {
+    fun <T> configure(runtimeId: String, allowEmpty: Boolean = false, expectedLoadId: String? = null, nextLoadId: String = java.util.UUID.randomUUID().toString(), action: () -> T): T {
         check(mutex.tryLock()) { "Another local runtime operation is active" }
+        var mutating = false
         try {
+            check(expectedLoadId == null || expectedLoadId == _status.value.loadId) { "Loaded model changed; reload explicitly" }
             check((active?.id == runtimeId && _status.value.phase == LocalRuntimePhase.READY && _status.value.requestedRuntime == runtimeId) || (allowEmpty && active == null && _status.value.phase == LocalRuntimePhase.EMPTY)) { "Selected runtime is not ready" }
+            mutating = true
             _status.value = _status.value.copy(loadId = null)
-            return action().also { _status.value = _status.value.copy(loadId = java.util.UUID.randomUUID().toString()) }
+            return action().also { _status.value = _status.value.copy(loadId = nextLoadId) }
         } catch (failure: Throwable) {
-            _status.value = _status.value.copy(phase = LocalRuntimePhase.ERROR, loadId = null, error = failure.message ?: "Configuration failed")
+            if (mutating) _status.value = _status.value.copy(phase = LocalRuntimePhase.ERROR, loadId = null, error = failure.message ?: "Configuration failed")
             throw failure
         } finally { mutex.unlock() }
     }
 
+    fun configureForLoad(runtimeId: String, loadId: String, action: () -> Unit): String {
+        require(loadId.isNotBlank())
+        val next = java.util.UUID.randomUUID().toString()
+        configure(runtimeId, expectedLoadId = loadId, nextLoadId = next, action = action)
+        return next
+    }
+    fun cancelForLoad(loadId: String) { generationOwner?.takeIf { it.first == loadId }?.second?.cancel() }
     fun cancel() { active?.cancel() }
 
     suspend fun unloadIfCurrent(loadId: String): Boolean {
-        if (_status.value.loadId == loadId) cancel()
         return mutex.withLock {
             if (_status.value.loadId != loadId) return@withLock false
             try {

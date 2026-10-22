@@ -131,13 +131,12 @@ class ResidentEngine @Inject constructor(
 
         val loadId = runCatching { JSONObject(load.getOrThrow()).getString("loadId").takeIf { it.isNotBlank() && it != "null" } }.getOrNull()
         if (loadId == null) {
-            runCatching { InferenceClient.unloadModel() }
             _state.value = ResidentUiState.Unavailable("Runtime did not return a loaded model identity")
             return _state.value
         }
         val ws = laptop.core.activeWorkspace()
         val record = laptop.core.startResidentSession(identity, ws?.id, null, expectedAssignment = assignment).getOrElse {
-            runCatching { InferenceClient.unloadModel() }
+            runCatching { InferenceClient.unloadModelForLoad(loadId) }
             _state.value = ResidentUiState.Unavailable("could not persist resident session: ${it.message}")
             return _state.value
         }
@@ -267,14 +266,14 @@ class ResidentEngine @Inject constructor(
 
     fun cancelGeneration() {
         cancelRequested = true
-        runCatching { InferenceClient.stopGeneration() }
+        session?.loadId?.let { runCatching { InferenceClient.stopGenerationForLoad(it) } }
     }
 
     suspend fun stop() = lifecycleMutex.withLock { stopAssigned() }
 
     private suspend fun stopAssigned() {
         val s = session ?: return
-        runCatching { InferenceClient.unloadModel() }
+        s.loadId?.let { runCatching { InferenceClient.unloadModelForLoad(it) } }
         laptop.core.endResidentSession(s.id, ResidentSessionStatus.ENDED_BY_USER)
         session = null
         _streaming.value = ""

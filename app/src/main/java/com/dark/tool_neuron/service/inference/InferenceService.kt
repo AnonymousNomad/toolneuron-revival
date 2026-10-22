@@ -501,6 +501,19 @@ class InferenceService : Service() {
             collectLocalFlow(localRuntime.generate(messagesJson, maxTokens, multiTurn = true, expectedLoadId = loadId), callback)
         }
 
+        override fun stopGenerationForLoad(loadId: String) { localRuntime.cancelForLoad(loadId) }
+        override fun configureChatForLoad(loadId: String, prompt: String, thinking: Boolean): String =
+            localRuntime.configureForLoad(GgmlBackend.ID, loadId) { engine.setSystemPrompt(prompt); engine.setThinkingEnabled(thinking) }
+        override fun loadVlmProjectorForLoad(loadId: String, path: String, threads: Int): String =
+            localRuntime.configureForLoad(GgmlBackend.ID, loadId) {
+                check(runBlocking(Dispatchers.IO) { engine.loadVlmProjector(path, threads, -1, -1) }) { "Projector could not be loaded" }
+                loadedProjectorPath = path
+                loadedImageMaxTokens = -1
+            }
+        override fun compactConversationForLoad(messagesJson: String, maxTokens: Int, loadId: String, callback: IGenerationCallback) {
+            val messages = JSONArray(messagesJson).apply { put(JSONObject().put("role", "user").put("content", GGMLEngine.DEFAULT_SUMMARIZE_PROMPT)) }
+            collectLocalFlow(localRuntime.generate(messages.toString(), maxTokens, multiTurn = true, expectedLoadId = loadId, cleanup = { engine.resetKvCache() }), callback)
+        }
         override fun stopGeneration() {
             localRuntime.cancel()
         }
@@ -558,38 +571,31 @@ class InferenceService : Service() {
 
         override fun stateLoadFromFile(path: String): Boolean = runCatching { localRuntime.configure(GgmlBackend.ID) { engine.stateLoadFromFile(path) } }.getOrDefault(false)
 
-        override fun loadVlmProjector(path: String, threads: Int, imageMinTokens: Int, imageMaxTokens: Int): Boolean {
-            if (!legacyGgmlReady()) return false
-            val ok = runBlocking(Dispatchers.IO) {
-                engine.loadVlmProjector(path, threads, imageMinTokens, imageMaxTokens)
-            }
-            if (ok) {
+        override fun loadVlmProjector(path: String, threads: Int, imageMinTokens: Int, imageMaxTokens: Int): Boolean = runCatching {
+            localRuntime.configureForLoad(GgmlBackend.ID, localRuntime.status.value.loadId ?: error("No model")) {
+                check(runBlocking(Dispatchers.IO) { engine.loadVlmProjector(path, threads, imageMinTokens, imageMaxTokens) })
                 loadedProjectorPath = path
                 loadedImageMaxTokens = imageMaxTokens
             }
-            return ok
+            true
+        }.getOrDefault(false)
+        override fun loadVlmProjectorFromFd(pfd: ParcelFileDescriptor, threads: Int, imageMinTokens: Int, imageMaxTokens: Int): Boolean = pfd.use {
+            runCatching {
+                localRuntime.configureForLoad(GgmlBackend.ID, localRuntime.status.value.loadId ?: error("No model")) {
+                    val fd = pfd.detachFd()
+                    check(runBlocking(Dispatchers.IO) { engine.loadVlmProjectorFromFd(fd, threads, imageMinTokens, imageMaxTokens) })
+                    loadedProjectorPath = "fd:$fd"
+                    loadedImageMaxTokens = imageMaxTokens
+                }
+                true
+            }.getOrDefault(false)
         }
-
-        override fun loadVlmProjectorFromFd(pfd: ParcelFileDescriptor, threads: Int, imageMinTokens: Int, imageMaxTokens: Int): Boolean {
-            if (!legacyGgmlReady()) {
-                try { pfd.close() } catch (_: Exception) {}
-                return false
-            }
-            val fd = pfd.detachFd()
-            val ok = runBlocking(Dispatchers.IO) {
-                engine.loadVlmProjectorFromFd(fd, threads, imageMinTokens, imageMaxTokens)
-            }
-            if (ok) {
-                loadedProjectorPath = "fd:$fd"
-                loadedImageMaxTokens = imageMaxTokens
-            }
-            return ok
-        }
-
         override fun releaseVlmProjector() {
-            engine.releaseVlmProjector()
-            loadedProjectorPath = null
-            loadedImageMaxTokens = -1
+            localRuntime.configureForLoad(GgmlBackend.ID, localRuntime.status.value.loadId ?: error("No model")) {
+                engine.releaseVlmProjector()
+                loadedProjectorPath = null
+                loadedImageMaxTokens = -1
+            }
         }
 
         override fun isVlmLoaded(): Boolean = legacyGgmlReady() && engine.isVlmLoaded
@@ -598,11 +604,14 @@ class InferenceService : Service() {
 
         override fun getVlmDefaultMarker(): String = engine.getVlmDefaultMarker()
 
-        override fun generateVlm(
+        override fun generateVlm(messagesJson: String, imageFds: Array<ParcelFileDescriptor>?, maxTokens: Int, imageQuality: Int, callback: IGenerationCallback) = generateVlmOwned(messagesJson, imageFds, maxTokens, imageQuality, null, callback)
+        override fun generateVlmForLoad(messagesJson: String, imageFds: Array<ParcelFileDescriptor>?, maxTokens: Int, imageQuality: Int, loadId: String, callback: IGenerationCallback) = generateVlmOwned(messagesJson, imageFds, maxTokens, imageQuality, loadId, callback)
+        private fun generateVlmOwned(
             messagesJson: String,
             imageFds: Array<ParcelFileDescriptor>?,
             maxTokens: Int,
             imageQuality: Int,
+            expectedLoadId: String?,
             callback: IGenerationCallback,
         ) {
             if (!legacyGgmlReady()) {
@@ -622,13 +631,12 @@ class InferenceService : Service() {
                 return
             }
             val quality = ImageQuality.entries.getOrNull(imageQuality) ?: ImageQuality.MEDIUM
-            val projector = loadedProjectorPath
-            val maxImageTokens = loadedImageMaxTokens
-            val vtKeys: List<ByteArray?>? = if (projector != null) {
-                images.map { engine.computeVtKey(it, projector, maxImageTokens) }
-            } else null
             collectFlow(
-                localRuntime.legacyGeneration(GgmlBackend.ID) { engine.generateVlmFlow(
+                localRuntime.legacyGeneration(GgmlBackend.ID, expectedLoadId) {
+                    val projector = loadedProjectorPath
+                    val maxImageTokens = loadedImageMaxTokens
+                    val vtKeys: List<ByteArray?>? = if (projector != null) images.map { engine.computeVtKey(it, projector, maxImageTokens) } else null
+                    engine.generateVlmFlow(
                     messagesJson = messagesJson,
                     imageData = images,
                     maxTokens = maxTokens,
@@ -639,28 +647,23 @@ class InferenceService : Service() {
             )
         }
 
-        override fun precomputeVlmVision(pfd: ParcelFileDescriptor, imageQuality: Int): Boolean {
-            if (!legacyGgmlReady()) {
-                try { pfd.close() } catch (_: Exception) {}
-                return false
-            }
-            val projector = loadedProjectorPath ?: return false
-            val maxImageTokens = loadedImageMaxTokens
-            val bytes = try {
-                ParcelFileDescriptor.AutoCloseInputStream(pfd).use { it.readBytes() }
-            } catch (e: Exception) {
-                Log.e(TAG, "precomputeVlmVision: read failed", e)
-                return false
-            }
-            val quality = ImageQuality.entries.getOrNull(imageQuality) ?: ImageQuality.MEDIUM
-            return runBlocking(Dispatchers.IO) {
-                try {
-                    engine.precomputeVisionEmbeddings(bytes, projector, maxImageTokens, quality)
-                } catch (e: Exception) {
-                    Log.e(TAG, "precomputeVlmVision: encode failed", e)
-                    false
+        override fun precomputeVlmVision(pfd: ParcelFileDescriptor, imageQuality: Int): Boolean =
+            precomputeVlmVisionForLoad(pfd, imageQuality, localRuntime.status.value.loadId ?: "")
+        override fun precomputeVlmVisionForLoad(pfd: ParcelFileDescriptor, imageQuality: Int, loadId: String): Boolean {
+            val bytes = ParcelFileDescriptor.AutoCloseInputStream(pfd).use { it.readBytes() }
+            return runCatching {
+                runBlocking(Dispatchers.IO) {
+                    var result = false
+                    localRuntime.legacyGeneration(GgmlBackend.ID, loadId) {
+                        kotlinx.coroutines.flow.flow {
+                            val projector = loadedProjectorPath ?: error("No projector")
+                            result = engine.precomputeVisionEmbeddings(bytes, projector, loadedImageMaxTokens, ImageQuality.entries.getOrNull(imageQuality) ?: ImageQuality.MEDIUM)
+                            emit(Unit)
+                        }
+                    }.collect { }
+                    result
                 }
-            }
+            }.getOrDefault(false)
         }
 
         override fun loadTtsModel(configJson: String): Boolean {
@@ -1202,9 +1205,7 @@ class InferenceService : Service() {
                     else -> callback.onError("Runtime stream ended without completion")
                 }
             } catch (_: DeadObjectException) {
-                localRuntime.cancel()
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                localRuntime.cancel()
                 throw cancelled
             } catch (failure: Exception) {
                 try { callback.onError(failure.message ?: "Runtime generation failed") } catch (_: Exception) {}
@@ -1218,13 +1219,14 @@ class InferenceService : Service() {
         onComplete: () -> Unit = {},
     ) {
         scope.launch(Dispatchers.IO) {
+            var terminal: GenerationEvent? = null
             try {
                 flow.collect { event ->
                     try {
                         when (event) {
                             is GenerationEvent.Token -> callback.onToken(event.text)
-                            is GenerationEvent.Done -> callback.onDone()
-                            is GenerationEvent.Error -> callback.onError(event.message)
+                            is GenerationEvent.Done -> terminal = event
+                            is GenerationEvent.Error -> terminal = event
                             is GenerationEvent.Metrics -> {
                                 val m = event.metrics
                                 val json = JSONObject().apply {
@@ -1247,12 +1249,16 @@ class InferenceService : Service() {
                             is GenerationEvent.VtCacheStatus -> Unit
                         }
                     } catch (_: DeadObjectException) {
-                        engine.stopGeneration()
-                        return@collect
+                        throw kotlinx.coroutines.CancellationException("Consumer disconnected")
                     }
                 }
+                when (val result = terminal) {
+                    is GenerationEvent.Done -> callback.onDone()
+                    is GenerationEvent.Error -> callback.onError(result.message)
+                    else -> callback.onError("VLM stream ended without completion")
+                }
             } catch (_: DeadObjectException) {
-                engine.stopGeneration()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
             } catch (e: Exception) {
                 try { callback.onError(e.message ?: "Unknown error") } catch (_: Exception) {}
             } finally {

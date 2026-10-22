@@ -469,7 +469,7 @@ class HomeViewModel @Inject constructor(
                 updateStatus(uri, ImageEncodeStatus.Encoding)
                 val quality = runCatching { ImageQuality.valueOf(appPrefs.vlmImageQuality) }
                     .getOrDefault(ImageQuality.MEDIUM)
-                val ok = InferenceClient.precomputeVision(app, uri, quality)
+                val ok = InferenceClient.precomputeVision(app, uri, quality, modelSession.requireLoadId())
                 if (ok) {
                     vlmCache.markCached(activeId, sha, bytes.size.toLong(), imageMaxTokens = -1)
                     updateStatus(uri, ImageEncodeStatus.Cached)
@@ -919,7 +919,7 @@ class HomeViewModel @Inject constructor(
                 // service signals Done/Error. callbackFlow never closes
                 // itself, so a plain collect would hang here and we'd
                 // never archive + insert the summary card downstream.
-                InferenceClient.compactConversation(messagesJson, maxSummaryTokens)
+                InferenceClient.compactConversation(messagesJson, maxSummaryTokens, modelSession.requireLoadId())
                     .transformWhile { event ->
                         emit(event)
                         event !is InferenceEvent.Done && event !is InferenceEvent.Error
@@ -1031,17 +1031,18 @@ class HomeViewModel @Inject constructor(
         _loadModelWindow.value = false
 
         val thinkingOn = _thinkingEnabled.value && modelSession.supportsThinking.value
-        modelSession.setThinkingEnabled(thinkingOn)
-        toolCallCoordinator.configureInference(
-            webOn = _webSearchEnabled.value,
-            userSystemPrompt = modelSession.userSystemPrompt.value,
-        )
 
         generationJob = viewModelScope.launch {
             var outcome: GenerationOutcome? = null
             var fallbackError: String? = null
             var wasStopped = false
             try {
+        toolCallCoordinator.configureInference(
+            webOn = _webSearchEnabled.value,
+            userSystemPrompt = modelSession.userSystemPrompt.value,
+            thinking = thinkingOn,
+        )
+
                 outcome = inferenceCoordinator.run(
                     chatId = chatId,
                     onStreamingUpdate = { content, thinking ->
