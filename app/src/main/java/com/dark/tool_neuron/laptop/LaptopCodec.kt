@@ -71,6 +71,12 @@ object LaptopCodec {
         }
         val evIds = state.evidence.map { it.id }
         if (evIds.size != evIds.toSet().size) throw LaptopStateError("duplicate evidence id")
+        state.qualifications.forEach { record ->
+            if (record.recordedAtMs <= 0 || record.checks.isEmpty() || record.checks.map { it.id }.distinct().size != record.checks.size)
+                throw LaptopStateError("invalid qualification record")
+            if (record.checks.any { check -> check.evidenceRefs.isEmpty() || check.evidenceRefs.any { it !in evIds } })
+                throw LaptopStateError("qualification references missing evidence")
+        }
         val cpIds = state.checkpoints.map { it.id }
         if (cpIds.size != cpIds.toSet().size) throw LaptopStateError("duplicate checkpoint id")
         state.resident.activeSessionId?.let { active ->

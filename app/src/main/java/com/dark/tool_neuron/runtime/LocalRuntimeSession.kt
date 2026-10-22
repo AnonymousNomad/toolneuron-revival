@@ -33,19 +33,20 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
         runtimeId: String,
         path: String,
         options: LocalLoadOptions = LocalLoadOptions(),
+        configure: () -> Unit = {},
         validate: (File) -> Unit = {},
     ): String {
         lateinit var file: File
-        return loadWith(runtimeId, prepare = { file = ownedGguf(path); validate(file) }) { it.load(file, options) }
+        return loadWith(runtimeId, prepare = { file = ownedGguf(path); validate(file) }) { backend -> backend.load(file, options).also { configure() } }
     }
 
     suspend fun loadLegacyDescriptor(runtimeId: String, fd: Int, options: LocalLoadOptions): String =
         loadLegacyDescriptor(runtimeId, options) { fd }
 
-    suspend fun loadLegacyDescriptor(runtimeId: String, options: LocalLoadOptions, acquire: () -> Int): String =
+    suspend fun loadLegacyDescriptor(runtimeId: String, options: LocalLoadOptions, configure: () -> Unit = {}, acquire: () -> Int): String =
         loadWith(runtimeId, prepare = {
             require(runtimeId == GgmlBackend.ID) { "Only the existing GGML backend supports legacy descriptors; import a durable GGUF file" }
-        }) { it.loadLegacyDescriptor(acquire(), options) }
+        }) { backend -> backend.loadLegacyDescriptor(acquire(), options).also { configure() } }
 
     private suspend fun loadWith(
         runtimeId: String,

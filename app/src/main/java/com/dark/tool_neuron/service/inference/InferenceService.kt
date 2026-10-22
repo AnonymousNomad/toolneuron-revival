@@ -376,7 +376,7 @@ class InferenceService : Service() {
                 try {
                     val config = parseConfig(configJson)
                     val runtimeId = config.optString("runtimeId", GgmlBackend.ID)
-                    val info = localRuntime.load(runtimeId, modelPath, loadOptions(config)) { file ->
+                    val info = localRuntime.load(runtimeId, modelPath, loadOptions(config), configure = { applySamplingFromConfig(config) }) { file ->
                         logDeviceProfile()
                         val modelSize = file.length()
                         val memAvail = readMemAvailableBytes()
@@ -387,7 +387,6 @@ class InferenceService : Service() {
                         }
                         detectUnsupportedQuantization(file.path)?.let { error(it) }
                     }
-                    applySamplingFromConfig(config)
                     updateNotification("Model loaded · $runtimeId")
                     safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId)) }
                 } catch (e: OutOfMemoryError) {
@@ -437,8 +436,7 @@ class InferenceService : Service() {
             }
             scope.launch {
                 try {
-                    val info = localRuntime.loadLegacyDescriptor(runtimeId, loadOptions(config)) { pfd.detachFd() }
-                    applySamplingFromConfig(config)
+                    val info = localRuntime.loadLegacyDescriptor(runtimeId, loadOptions(config), configure = { applySamplingFromConfig(config) }) { pfd.detachFd() }
                     updateNotification("Model loaded · $runtimeId")
                     safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId)) }
                 } catch (e: OutOfMemoryError) {
@@ -1258,6 +1256,16 @@ class InferenceService : Service() {
         if (json.isBlank()) JSONObject() else try { JSONObject(json) } catch (_: Exception) { JSONObject() }
 
     private fun applySamplingFromConfig(config: JSONObject) {
+        if (config.optString("cipherProfile") == "cipher-greedy-chatml/1") {
+            engine.setSampling(0f, 1, 1f, 0f, 0, 5f, 0.1f, 1)
+            check(engine.updateSamplerParams("""{"repeatPenalty":1.0,"frequencyPenalty":0.0,"presencePenalty":0.0,"penaltyLastN":0,"dryMultiplier":0.0,"dryBase":1.75,"dryAllowedLength":2,"dryPenaltyLastN":0,"xtcProbability":0.0,"xtcThreshold":0.1}""")) { "Native sampler profile rejected" }
+            engine.setSystemPrompt("")
+            engine.setLogitBias("{}")
+            engine.setChatTemplate("""{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}{% endfor %}{{ '<|im_start|>assistant\n' }}""")
+            engine.setKvPolicy(0, config.optInt("contextSize", 4096), false)
+            engine.resetKvCache()
+            return
+        }
         if (config.has("temperature") || config.has("topK") || config.has("topP")) {
             engine.setSampling(
                 temperature = config.optDouble("temperature", 0.7).toFloat(),

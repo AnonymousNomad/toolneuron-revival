@@ -12,6 +12,8 @@ import com.dark.tool_neuron.repo.ModelRepository
 import com.dark.tool_neuron.service.inference.InferenceClient
 import com.dark.tool_neuron.service.inference.InferenceEvent
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +33,7 @@ class ResidentEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val laptop: LaptopManager,
     private val modelRepo: ModelRepository,
+    private val assignmentInspector: com.dark.tool_neuron.laptop.CipherAssignmentInspector,
 ) {
     sealed class ResidentUiState {
         data object Idle : ResidentUiState()
@@ -73,6 +76,7 @@ class ResidentEngine @Inject constructor(
     )
 
     private var session: Session? = null
+    private val lifecycleMutex = Mutex()
 
     @Volatile private var dossierCache: List<ModelRegistry.ModelDossier> = emptyList()
 
@@ -89,31 +93,34 @@ class ResidentEngine @Inject constructor(
         runCatching { laptop.core.recoverResidentOnBoot() }
     }
 
-    suspend fun start(contextSize: Int = 4096): ResidentUiState {
+    suspend fun start(contextSize: Int = 4096): ResidentUiState = lifecycleMutex.withLock { startAssigned() }
+
+    private suspend fun startAssigned(): ResidentUiState {
         if (_state.value is ResidentUiState.Active) return _state.value
         _state.value = ResidentUiState.Starting
 
-        val memAvail = readMemAvailableBytes()
-        val selection = ResidentSelector.select(modelRepo.models.value, memAvail)
-        if (selection is ResidentModelSelection.Unavailable) {
-            _state.value = ResidentUiState.Unavailable(selection.reason)
+        val inspection = assignmentInspector.inspect()
+        if (inspection.assessment.status != com.dark.tool_neuron.laptop.CipherSlotStatus.READY) {
+            _state.value = ResidentUiState.Unavailable(inspection.assessment.reason)
             return _state.value
         }
-        val chosen = selection as ResidentModelSelection.Selected
-        val model = chosen.model
-
-        val dossier = laptop.modelDossiers(listOf(model)).firstOrNull()
-            ?: ModelRegistry.dossier(model, null, null)
-        val identity = buildIdentity(model, dossier, chosen.reason, contextSize)
-
-        val configJson = ResidentLoadConfig.jsonFor(contextSize)
+        val assignment = inspection.assignment!!
+        val model = inspection.model!!
+        val dossier = laptop.modelDossiers(listOf(model)).firstOrNull() ?: ModelRegistry.dossier(model, null, null)
+        val identity = buildIdentity(model, dossier, "explicit qualified Cipher assignment", assignment.contextSize)
+            .copy(runtime = com.dark.tool_neuron.laptop.CipherRuntimeIdentity.revision(assignment.runtimeId, assignment.contextSize))
+        if (identity.artifactSha256 != assignment.artifactSha256) {
+            _state.value = ResidentUiState.Unavailable("Assigned artifact changed during load preparation")
+            return _state.value
+        }
+        val configJson = com.dark.tool_neuron.laptop.CipherRuntimeIdentity.config(assignment)
         val load = when (model.pathType) {
             PathType.FILE -> InferenceClient.loadModel(model.path, configJson)
             PathType.CONTENT_URI -> InferenceClient.loadModelFromUri(context, Uri.parse(model.path), configJson)
         }
         if (load.isFailure) {
             val reason = "resident model failed to load: ${load.exceptionOrNull()?.message}"
-            laptop.core.startResidentSession(identity, laptop.core.activeWorkspace()?.id, null)
+            laptop.core.startResidentSession(identity, laptop.core.activeWorkspace()?.id, null, expectedAssignment = assignment)
                 .onSuccess { rec ->
                     laptop.core.endResidentSession(rec.id, ResidentSessionStatus.FAILED, reason)
                 }
@@ -122,7 +129,8 @@ class ResidentEngine @Inject constructor(
         }
 
         val ws = laptop.core.activeWorkspace()
-        val record = laptop.core.startResidentSession(identity, ws?.id, null).getOrElse {
+        val record = laptop.core.startResidentSession(identity, ws?.id, null, expectedAssignment = assignment).getOrElse {
+            runCatching { InferenceClient.unloadModel() }
             _state.value = ResidentUiState.Unavailable("could not persist resident session: ${it.message}")
             return _state.value
         }
@@ -255,7 +263,9 @@ class ResidentEngine @Inject constructor(
         runCatching { InferenceClient.stopGeneration() }
     }
 
-    suspend fun stop() {
+    suspend fun stop() = lifecycleMutex.withLock { stopAssigned() }
+
+    private suspend fun stopAssigned() {
         val s = session ?: return
         runCatching { InferenceClient.unloadModel() }
         laptop.core.endResidentSession(s.id, ResidentSessionStatus.ENDED_BY_USER)
@@ -319,7 +329,7 @@ class ResidentEngine @Inject constructor(
                 artifactSha256 = sha,
                 hashUnavailableReason = hashReason,
                 admission = dossier.admissions.map { it.name }.sorted(),
-                contextTemplateIdentity = "engine-chat-template (gguf_lib managed) · arch=${dossier.architecture ?: "unknown"}",
+                contextTemplateIdentity = "cipher-greedy-chatml/1 · fixed ChatML template",
                 contextProfile = "ctx-$contextSize",
                 selectionReason = selectionReason,
                 boundAtMs = System.currentTimeMillis(),

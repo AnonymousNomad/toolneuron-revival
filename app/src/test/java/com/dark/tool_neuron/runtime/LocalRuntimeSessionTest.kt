@@ -30,6 +30,17 @@ class LocalRuntimeSessionTest {
         assertEquals(0, existing.generations)
     }
 
+    @Test fun failedPostLoadConfigurationNeverPublishesReady() = runBlocking {
+        val backend = ContractBackend()
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        val result = runCatching { session.load(backend.id, model().path, configure = { error("profile rejected") }) }
+        assertTrue(result.isFailure)
+        assertEquals(LocalRuntimePhase.ERROR, session.status.value.phase)
+        assertNull(session.status.value.loadedRuntime)
+        assertTrue(backend.unloads > 0)
+        assertTrue(runCatching { session.generate("prompt", 2).toList() }.isFailure)
+    }
+
     @Test fun unknownRuntimeDoesNotSelectADefault() = runBlocking {
         val backend = ContractBackend()
         val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))

@@ -78,6 +78,14 @@ class LaptopCore(
 
     fun closeWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.close(app) }
 
+    fun assignCipher(assignment: CipherAssignment?): Result<Unit> = runCatching {
+        mutate {
+            check(it.resident.activeSessionId == null) { "Stop Cipher before changing its assignment" }
+            it.copy(cipherAssignment = assignment)
+        }
+        Unit
+    }
+
     fun showWorkstationDesktop(): Result<Unit> = updateWorkstation { it.desktop() }
 
     data class WorkspaceEntry(val path: String, val isDir: Boolean, val bytes: Long)
@@ -320,7 +328,7 @@ class LaptopCore(
     fun hasPermission(capabilityRef: String): Boolean =
         _state.value.permissions.firstOrNull { it.capabilityId == capabilityRef }?.granted ?: false
 
-    fun startResidentSession(identity: com.dark.tool_neuron.laptop.resident.ResidentIdentity, workspaceId: String?, taskId: String?): Result<com.dark.tool_neuron.laptop.resident.ResidentSessionRecord> = runCatching {
+    fun startResidentSession(identity: com.dark.tool_neuron.laptop.resident.ResidentIdentity, workspaceId: String?, taskId: String?, expectedAssignment: CipherAssignment? = null): Result<com.dark.tool_neuron.laptop.resident.ResidentSessionRecord> = runCatching {
         val now = nowMs()
         val record = com.dark.tool_neuron.laptop.resident.ResidentSessionRecord(
             id = shortId("rs"),
@@ -334,6 +342,7 @@ class LaptopCore(
             updatedAtMs = now,
         )
         mutate { s ->
+            if (expectedAssignment != null) check(s.cipherAssignment == expectedAssignment && s.resident.activeSessionId == null) { "Cipher assignment changed or another session started" }
             val kept = (s.resident.sessions.filter { it.status != com.dark.tool_neuron.laptop.resident.ResidentSessionStatus.ACTIVE } + record).takeLast(MAX_RESIDENT_SESSIONS)
             s.copy(resident = s.resident.copy(sessions = kept, activeSessionId = record.id))
         }
