@@ -32,7 +32,7 @@ ToolNeuron Revival is not just a local chat frontend. The target is a local-firs
 - ToolNeuron TV / media companion direction;
 - Game Station / companion bridge direction;
 - continuity/memory;
-- community beta, GitHub releases, Discord and project website.
+- community beta, GitHub releases, Discord and the existing Floot **Covert Nexus** website/project (`01147976-3673-42c7-9220-2d028594ba86`).
 
 ## First actions
 1. Read AGENTS.md.
