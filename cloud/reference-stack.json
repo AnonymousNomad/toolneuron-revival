@@ -33,12 +33,6 @@
       "mode": "read-only-reference"
     },
     {
-      "name": "Public website",
-      "repo": "AnonymousNomad/anonymousnomad.github.io",
-      "revision": "582c12c9f6bdf03f9bc08df22cc28429b4dcff10",
-      "mode": "publication-target"
-    },
-    {
       "name": "Covert Nexus API",
       "repo": "AnonymousNomad/covert-nexus-api",
       "revision": null,
@@ -55,6 +49,16 @@
       "name": "ToolNeuron laptop continuation",
       "revision": "4599afbd956a0f111c471ec82d3c367bb76f9ae0",
       "note": "clean local worktree observed; exact bytes not uploaded before Desktop Commander quota closed"
+    }
+  ],
+  "external_systems": [
+    {
+      "name": "Canonical website / ecosystem",
+      "provider": "Floot",
+      "project_name": "Covert Nexus",
+      "project_id": "01147976-3673-42c7-9220-2d028594ba86",
+      "mode": "publication-target",
+      "note": "Existing ToolNeuron marketplace/publisher/GameBridge/Foundry/catalog material lives here. Do not substitute GitHub Pages."
     }
   ]
 }
