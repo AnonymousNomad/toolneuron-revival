@@ -87,9 +87,12 @@ Implement only blueprinted/product-useful surfaces:
 - no silent telemetry upload.
 
 ## Phase 9 — Website
-Preferred public home reference: AnonymousNomad/anonymousnomad.github.io.
-If cross-repo write access is available, add/maintain a ToolNeuron page there.
-Otherwise maintain deployable site content under site/ and record pending publication in ops/outbox/site/.
+Canonical target: Floot project **Covert Nexus** (`01147976-3673-42c7-9220-2d028594ba86`).
+
+Update the existing Floot ecosystem site with ToolNeuron milestones, releases, beta/download information, verified capability evidence and relevant marketplace/community content. Preserve the existing Covert Nexus information architecture and shared catalog instead of creating a competing ToolNeuron site.
+
+If Floot access is unavailable in the Cloud runtime, prepare an exact Floot-targeted update package under `ops/outbox/site/` and continue. Do NOT substitute `anonymousnomad.github.io` as the ToolNeuron site.
+
 Claims must match evidence.
 
 ## Phase 10 — Discord/community
