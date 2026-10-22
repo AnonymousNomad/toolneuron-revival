@@ -106,6 +106,17 @@ class VibeStudioTest {
         assertEquals(Verdict.FAIL, studio.build(ws.id).verdict)
     }
 
+    @Test fun openingANewPathNeverTreatsAnExistingUnlistedFileAsBlank() {
+        val (_, studio) = fixture()
+        val ws = studio.create("fresh file", "web")
+        val listed = studio.files(ws.id)
+        File(temp.root, "projects/${ws.id}/src/added.js").writeText("existing source")
+        assertFalse("added.js" in listed)
+        assertEquals("existing source", studio.openSource(ws.id, "added.js"))
+        assertNull(studio.openSource(ws.id, "new.js"))
+        assertTrue(runCatching { studio.openSource(ws.id, "../escape.js") }.isFailure)
+    }
+
     @Test fun malformedArtifactRecordsCannotEncodeUnsafeExportPaths() {
         assertThrows(IllegalArgumentException::class.java) { VibeArtifactFile("../escape", "a".repeat(64), 1) }
         assertThrows(IllegalArgumentException::class.java) { VibeArtifactFile("index.html", "invalid", 1) }

@@ -146,7 +146,7 @@ object ProcedureRegistry {
 
 object ToolRegistry {
     val SEEDS: List<ToolRef> = listOf(
-        ToolRef("preview.static", ToolKind.FILESYSTEM, "Offline static preview", ToolStatus.PLANNED, "Verified static bundle core is present; sandboxed renderer is the next slice"),
+        ToolRef("preview.static", ToolKind.FILESYSTEM, "Offline static preview", ToolStatus.AVAILABLE, "Per-build origin; no network, filesystem URLs or native JavaScript bridge"),
         ToolRef("filesystem.workspace", ToolKind.FILESYSTEM, "Workspace files", ToolStatus.AVAILABLE, "Laptop workspace read/write under the app-owned directory"),
         ToolRef("terminal.execute", ToolKind.TERMINAL, "Embedded terminal", ToolStatus.AVAILABLE, "Platform shell (/system/bin/sh) via app-owned PTY; governed effect provider tn.terminal.system-sh"),
         ToolRef("git.cli", ToolKind.GIT, "Git", ToolStatus.PLANNED, "Requires the embedded development environment"),

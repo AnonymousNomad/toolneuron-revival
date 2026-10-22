@@ -27,10 +27,15 @@ class VibeStudio(private val core: LaptopCore, private val workspacesRoot: File,
         return sourceFiles(root(workspaceId)).map { it.first }
     }
 
-    @Synchronized fun read(workspaceId: String, path: String): String {
+    @Synchronized fun read(workspaceId: String, path: String): String =
+        openSource(workspaceId, path) ?: error("Source file is missing")
+
+    @Synchronized fun openSource(workspaceId: String, path: String): String? {
         requireGrant()
         require(path.substringAfterLast('.').lowercase() in TEXT_TYPES) { "This asset is not editable text" }
-        return bounded(sourceFile(root(workspaceId), path), MAX_FILE_BYTES).toString(Charsets.UTF_8)
+        val file = sourceFile(root(workspaceId), path)
+        if (!file.exists()) return null
+        return bounded(file, MAX_FILE_BYTES).toString(Charsets.UTF_8)
     }
 
     @Synchronized fun save(workspaceId: String, path: String, text: String) {

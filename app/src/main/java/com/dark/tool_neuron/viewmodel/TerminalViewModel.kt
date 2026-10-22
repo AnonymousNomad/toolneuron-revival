@@ -57,6 +57,10 @@ class TerminalViewModel @Inject constructor(
     }
 
     fun openSession() {
+        if (!laptop.core.hasPermission("dev.terminal.execute@1")) {
+            _status.value = "denied: grant Terminal execution in Abilities first"
+            return
+        }
         val ws = laptop.core.activeWorkspace()
         if (ws == null) {
             _status.value = "no active workspace (create one in the Laptop screen)"
@@ -73,6 +77,10 @@ class TerminalViewModel @Inject constructor(
     }
 
     fun send(sessionId: String, text: String) {
+        if (!laptop.core.hasPermission("dev.terminal.execute@1")) {
+            _status.value = "denied: Terminal execution permission was revoked"
+            return
+        }
         val s = laptop.terminalSessions.sessions.value.firstOrNull { it.id == sessionId } ?: return
         if (text.isEmpty()) return
         if (!s.sendInput(text + "\n")) _status.value = "write failed"

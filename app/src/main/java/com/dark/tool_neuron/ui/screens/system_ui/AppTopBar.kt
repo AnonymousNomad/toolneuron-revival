@@ -52,6 +52,7 @@ fun AppTopBar(
         NavScreens.Downloads.route -> DownloadsTopBar(onBack = onBack)
         NavScreens.Laptop.route -> LaptopTopBar(onBack = onBack)
         NavScreens.Terminal.route -> TerminalTopBar(onBack = onBack)
+        NavScreens.Vibe.route -> RetroTopBar(title = "Vibe Studio", onBack = onBack)
         NavScreens.Cipher.route -> CipherTopBar(onBack = onBack)
         NavScreens.SetupCipher.route -> SetupScreenTopBar()
         NavScreens.SetupAbilities.route -> SetupScreenTopBar()

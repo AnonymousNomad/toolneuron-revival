@@ -92,6 +92,8 @@ fun TNavigation(
     onModelSetupComplete: () -> Unit = {},
     onRagSetupComplete: () -> Unit = {},
     onWorkstationSetupComplete: () -> Unit = {},
+    onVibeExport: (String) -> Unit = {},
+    onVibeCapture: (String) -> Unit = {},
 ) {
     val transitions = rememberNavTransitions()
 
@@ -231,6 +233,11 @@ fun TNavigation(
                     }
                 },
             )
+        }
+        composable(NavScreens.Vibe.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val studio: com.dark.tool_neuron.viewmodel.VibeViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.vibe.VibeScreen(innerPadding, { navController.navigate(it) }, studio, onVibeExport, onVibeCapture)
         }
         composable(NavScreens.Desktop.route) {
             DesktopScreen(

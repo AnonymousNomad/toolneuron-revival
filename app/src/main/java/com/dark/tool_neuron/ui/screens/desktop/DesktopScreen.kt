@@ -51,6 +51,7 @@ fun DesktopScreen(
     val activeWorkspace = laptopState.workspaces.firstOrNull { it.id == laptopState.activeWorkspaceId }
 
     val tiles = listOf(
+        DesktopTile("Vibe Studio", TnIcons.Code, NavScreens.Vibe.route, note = "create + build"),
         DesktopTile("Cipher", TnIcons.Sparkles, NavScreens.Cipher.route),
         DesktopTile("Chat", TnIcons.MessageCircle, NavScreens.HomeScreen.route),
         DesktopTile("Projects", TnIcons.Package, NavScreens.Laptop.route),
@@ -77,11 +78,12 @@ fun DesktopScreen(
             RetroPanel(modifier = Modifier.fillMaxWidth()) {
                 Text("START CENTER", fontFamily = RetroMono, color = Retro.Emerald)
                 Text(
-                    if (activeWorkspace == null) "Choose a model, then create your first project. Your files and terminal share that project."
+                    if (activeWorkspace == null) "Create a Vibe project from a template, or choose a model to chat. Your files and terminal share the same project."
                     else "Resume ${activeWorkspace.name}, or open an app below. All project surfaces use the same workspace.",
                     fontFamily = RetroMono, color = Retro.TextDim, style = MaterialTheme.typography.labelSmall,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    RetroButton("Create in Vibe", onClick = { onNavigate(NavScreens.Vibe.route) })
                     RetroButton("Models", onClick = { onNavigate(NavScreens.ModelStore.route) })
                     RetroButton("Projects", onClick = { onNavigate(NavScreens.Laptop.route) })
                     if (activeWorkspace != null) RetroButton("Files", onClick = { onNavigate(NavScreens.Files.route) })

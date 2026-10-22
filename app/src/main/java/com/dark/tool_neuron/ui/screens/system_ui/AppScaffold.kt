@@ -2,6 +2,8 @@ package com.dark.tool_neuron.ui.screens.system_ui
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DrawerValue
@@ -53,6 +55,7 @@ private fun AppScaffoldInner() {
     val homeViewModel: HomeViewModel = hiltViewModel()
     val scaffoldViewModel: ScaffoldViewModel = hiltViewModel()
     val workstation: WorkstationViewModel = hiltViewModel()
+    val vibe: com.dark.tool_neuron.viewmodel.VibeViewModel = hiltViewModel()
     val laptopState by workstation.state.collectAsStateWithLifecycle()
     val windowStatus by workstation.status.collectAsStateWithLifecycle()
     val currentApp = WorkstationRoutes.app(currentRoute)
@@ -83,6 +86,8 @@ private fun AppScaffoldInner() {
 
     val nextDestination = remember { scaffoldViewModel.resolveStartDestination() }
     val shouldLock by scaffoldViewModel.shouldLock.collectAsStateWithLifecycle()
+    val vibeArchive = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip"), vibe::export)
+    val vibeImage = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png"), vibe::exportCapture)
     val rootWarning by scaffoldViewModel.rootWarning.collectAsStateWithLifecycle()
     val serverRunning by scaffoldViewModel.serverRunning.collectAsStateWithLifecycle()
     val downloadProgress by scaffoldViewModel.downloadProgress.collectAsStateWithLifecycle()
@@ -193,7 +198,7 @@ private fun AppScaffoldInner() {
                     onMenuClick = {
                         if (!isExpanded) scope.launch { drawerState.open() }
                     },
-                    onBack = { navController.popBackStack() },
+                    onBack = { if (WorkstationRoutes.isRoot(currentRoute)) minimizeWindow() else navController.popBackStack() },
                     onNavigateToStore = { navController.navigate(NavScreens.ModelStore.route) },
                     onNavigateToDesktop = { navController.navigate(NavScreens.Desktop.route) },
                 )
@@ -279,6 +284,8 @@ private fun AppScaffoldInner() {
                     }
                 },
                 onWorkstationSetupComplete = scaffoldViewModel::markModelSetupDone,
+                onVibeExport = { vibeArchive.launch(it) },
+                onVibeCapture = { vibeImage.launch(it) },
             )
         }
     }

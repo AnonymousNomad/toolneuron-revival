@@ -6,6 +6,7 @@ import androidx.navigation.navOptions
 
 object WorkstationRoutes {
     private val routes = mapOf(
+        WorkstationApp.VIBE to NavScreens.Vibe.route,
         WorkstationApp.CIPHER to NavScreens.Cipher.route,
         WorkstationApp.CHAT to NavScreens.HomeScreen.route,
         WorkstationApp.PROJECTS to NavScreens.Laptop.route,

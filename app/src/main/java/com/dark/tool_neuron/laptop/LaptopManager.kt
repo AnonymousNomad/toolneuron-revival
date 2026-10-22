@@ -29,6 +29,8 @@ class LaptopManager @Inject constructor(
         workspacesBaseDir = workspacesRoot,
     )
 
+    val vibe = com.dark.tool_neuron.studio.VibeStudio(core, workspacesRoot)
+
     val state = core.state
     val tools = ToolRegistry.SEEDS
 
