@@ -1,0 +1,25 @@
+{
+  "schema": "toolneuron-mission-queue/1",
+  "mode": "continuous",
+  "check_in_policy": "only_owner_boundary",
+  "verification": {
+    "ordinary": "fast",
+    "feature_boundary": "slice",
+    "integration_candidate": "release"
+  },
+  "missions": [
+    {"id":"TN-CLOUD-00","name":"reconcile-public-with-known-local-delta","priority":"P0"},
+    {"id":"TN-CLOUD-01","name":"workstation-product-closure","priority":"P0"},
+    {"id":"TN-CLOUD-02","name":"cipher-slot-and-canonical-workspace","priority":"P0"},
+    {"id":"TN-CLOUD-03","name":"model-lab-qualification-ui","priority":"P0"},
+    {"id":"TN-CLOUD-04","name":"vibe-studio-completion","priority":"P0"},
+    {"id":"TN-CLOUD-05","name":"creator-creations-miniseries","priority":"P1"},
+    {"id":"TN-CLOUD-06","name":"tv-and-game-station-foundations","priority":"P1"},
+    {"id":"TN-CLOUD-07","name":"continuity-and-recovery","priority":"P1"},
+    {"id":"TN-CLOUD-08","name":"beta-reporting","priority":"P1"},
+    {"id":"TN-CLOUD-09","name":"website-publication","priority":"P1"},
+    {"id":"TN-CLOUD-10","name":"discord-community-publication","priority":"P1"},
+    {"id":"TN-CLOUD-11","name":"apk-release-candidate","priority":"P0"}
+  ],
+  "receipt": "cloud/FINAL_RECEIPT.md"
+}
