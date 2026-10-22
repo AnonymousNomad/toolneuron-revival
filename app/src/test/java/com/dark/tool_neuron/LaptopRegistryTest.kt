@@ -38,7 +38,8 @@ class LaptopRegistryTest {
 
     @Test
     fun capabilityVocabularyLookup() {
-        assertEquals(6, CapabilityRegistry.SEED.size)
+        assertEquals(7, CapabilityRegistry.SEED.size)
+        assertNotNull(CapabilityRegistry.lookup("media.creation.plan@1"))
         assertNotNull(CapabilityRegistry.lookup("dev.vibe.workspace@1"))
         val refs = CapabilityRegistry.SEED.map { CapabilityRegistry.ref(it) }
         assertEquals(refs.size, refs.toSet().size)

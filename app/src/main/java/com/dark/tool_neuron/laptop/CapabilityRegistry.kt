@@ -15,6 +15,11 @@ object CapabilityRegistry {
     )
 
     val SEED: List<CapabilityDescriptor> = listOf(
+        CapabilityDescriptor(id = "media.creation.plan", version = 1,
+            description = "Persist local story/series hierarchy, character bible, asset provenance and audio slots; check continuity and export a production plan. Rendering remains separately unavailable.",
+            requiredEffects = listOf("filesystem.workspace"), providers = listOf("tn.creation.plan"),
+            permissions = listOf("filesystem.workspace.write", "artifact.export"),
+            verification = listOf("canonical project identity, scoped references, continuity report and honest unrendered manifest")),
         CapabilityDescriptor(
             id = "dev.vibe.workspace", version = 1,
             description = "Create/edit project source, build/check static web bundles, preview offline and export selected artifacts in Vibe Studio.",

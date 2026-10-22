@@ -51,6 +51,7 @@ fun DesktopScreen(
     val activeWorkspace = laptopState.workspaces.firstOrNull { it.id == laptopState.activeWorkspaceId }
 
     val tiles = listOf(
+        DesktopTile("Creator", TnIcons.Sparkles, NavScreens.Creator.route, note = "stories + series"),
         DesktopTile("Vibe Studio", TnIcons.Code, NavScreens.Vibe.route, note = "create + build"),
         DesktopTile("Cipher", TnIcons.Sparkles, NavScreens.Cipher.route),
         DesktopTile("Chat", TnIcons.MessageCircle, NavScreens.HomeScreen.route),

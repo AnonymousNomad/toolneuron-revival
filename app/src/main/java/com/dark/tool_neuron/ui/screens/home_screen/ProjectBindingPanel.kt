@@ -12,7 +12,7 @@ import com.dark.tool_neuron.viewmodel.HomeViewModel
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ProjectBindingPanel(viewModel: HomeViewModel, onOpenVibe: (String) -> Unit) {
+fun ProjectBindingPanel(viewModel: HomeViewModel, onOpenVibe: (String) -> Unit, onOpenCreator: (String) -> Unit) {
     val state by viewModel.projectState.collectAsStateWithLifecycle()
     val chatId by viewModel.currentChatId.collectAsStateWithLifecycle()
     val error by viewModel.projectError.collectAsStateWithLifecycle()
@@ -37,12 +37,13 @@ fun ProjectBindingPanel(viewModel: HomeViewModel, onOpenVibe: (String) -> Unit) 
     if (artifacts && project != null) AlertDialog(onDismissRequest = { artifacts = false }, title = { Text("${project.name} results") },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val builds = state.vibeBuilds.filter { it.workspaceId == project.id }.takeLast(10).reversed()
-            if (builds.isEmpty()) Text("No builds yet. Open this project in Vibe Studio to edit and build.")
+            project.creation?.let { plan -> Text("Creation plan: ${plan.episodes().size} episodes, ${plan.scenes().size} scenes, ${plan.shots().size} shots. Planning only; no rendered media.") }
+            if (builds.isEmpty() && project.creation == null) Text("No builds yet. Open this project in Vibe Studio to edit and build.")
             builds.forEach { build ->
                 Text("${build.id}\n${build.verdict} · structural checks only\n${build.digest}")
             }
         } }, confirmButton = { TextButton(onClick = {
             viewModel.bindCurrentProject(project.id)
-            if (viewModel.projectError.value == null) { artifacts = false; onOpenVibe(project.id) }
-        }) { Text("Open in Vibe Studio") } }, dismissButton = { TextButton(onClick = { artifacts = false }) { Text("Close") } })
+            if (viewModel.projectError.value == null) { artifacts = false; if (project.creation != null) onOpenCreator(project.id) else onOpenVibe(project.id) }
+        }) { Text(if (project.creation != null) "Open in Creator" else "Open in Vibe Studio") } }, dismissButton = { TextButton(onClick = { artifacts = false }) { Text("Close") } })
 }

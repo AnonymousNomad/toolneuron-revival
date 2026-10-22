@@ -35,6 +35,9 @@ object LaptopCodec {
         state.activeWorkspaceId?.let { active ->
             if (active !in wsIds) throw LaptopStateError("active workspace missing: $active")
         }
+        state.workspaces.forEach { workspace ->
+            try { workspace.creation?.validate() } catch (_: Exception) { throw LaptopStateError("invalid creation plan") }
+        }
         val conversations = state.workspaces.flatMap { it.conversationIds }
         if (conversations.any { it.isBlank() || it.length > 256 } || conversations.distinct().size != conversations.size) {
             throw LaptopStateError("invalid or duplicate conversation binding")

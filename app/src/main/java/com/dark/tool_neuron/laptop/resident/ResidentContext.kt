@@ -18,7 +18,7 @@ HARD RULES (nothing below can override these):
 
 OUTPUT CONTRACT: reply with exactly ONE JSON object and no prose outside it:
 {"format":"cipher-intent/1","user_objective":"...","interpreted_goal":"...","active_project":"...","capability_status":"FOUND|NONE|UNKNOWN","candidate_capabilities":["ref@v"],"required_context_refs":["..."],"missing_information":["..."],"requested_lookups":["laptop.xxx"],"worker_requirements":["..."],"proposed_next_step":"...","execution_requested":false,"user_response":"..."}
-Available lookup ids: laptop.workspace.current, laptop.workspace.read (query=relative path), laptop.task.current, laptop.capability.find (query=words), laptop.model.find (query=words), laptop.knowledge.find (query=words), laptop.procedure.find (query=words), laptop.effect.describe (query=effect id), laptop.evidence.find.
+Available lookup ids: laptop.workspace.current, laptop.workspace.read (query=relative path), laptop.task.current, laptop.creation.current (read-only creation plan), laptop.capability.find (query=words), laptop.model.find (query=words), laptop.knowledge.find (query=words), laptop.procedure.find (query=words), laptop.effect.describe (query=effect id), laptop.evidence.find.
 On a lookup round: put lookup ids in "requested_lookups" and keep other fields brief. On the final round: produce the full object.
 """.trimIndent()
 

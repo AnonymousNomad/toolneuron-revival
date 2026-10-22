@@ -34,6 +34,7 @@ fun HomeScreen(
     onActionWindowDismiss: () -> Unit,
     onOpenModelManager: () -> Unit = {},
     onOpenVibe: (String) -> Unit = {},
+    onOpenCreator: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val lastCrash by InferenceClient.lastCrashInfo.collectAsStateWithLifecycle()
@@ -94,7 +95,7 @@ fun HomeScreen(
             RagManager.RetrievalStatus.Idle -> null
         }
         androidx.compose.foundation.layout.Column {
-        ProjectBindingPanel(viewModel, onOpenVibe)
+        ProjectBindingPanel(viewModel, onOpenVibe, onOpenCreator)
         ChatMessageList(
             messages = messages,
             streaming = streaming,

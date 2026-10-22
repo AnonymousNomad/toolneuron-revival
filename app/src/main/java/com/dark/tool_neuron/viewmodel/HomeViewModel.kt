@@ -554,6 +554,8 @@ class HomeViewModel @Inject constructor(
     private val _projectError = MutableStateFlow<String?>(null)
     val projectError = _projectError.asStateFlow()
 
+    fun projectActionFailed(message: String) { _projectError.value = message.take(600) }
+
     fun bindCurrentProject(workspaceId: String?) {
         val chatId = _currentChatId.value
         val result = if (chatId == null) {

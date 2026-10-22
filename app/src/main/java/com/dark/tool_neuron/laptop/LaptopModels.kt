@@ -43,6 +43,7 @@ data class WorkspaceRef(
     val createdAtMs: Long,
     val metadata: Map<String, String> = emptyMap(),
     val conversationIds: List<String> = emptyList(),
+    val creation: com.dark.tool_neuron.creation.CreationPlan? = null,
 )
 
 @Serializable

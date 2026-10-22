@@ -10,6 +10,7 @@ import com.dark.tool_neuron.laptop.ToolRegistry
 enum class LookupKind(val id: String) {
     WORKSPACE_CURRENT("laptop.workspace.current"),
     WORKSPACE_READ("laptop.workspace.read"),
+    CREATION_CURRENT("laptop.creation.current"),
     TASK_CURRENT("laptop.task.current"),
     CAPABILITY_FIND("laptop.capability.find"),
     MODEL_FIND("laptop.model.find"),
@@ -52,6 +53,7 @@ class LaptopLookupService(
         return when (request.kind) {
             LookupKind.WORKSPACE_CURRENT -> workspaceCurrent(limit, workspaceId)
             LookupKind.WORKSPACE_READ -> workspaceRead(request.query, workspaceId)
+            LookupKind.CREATION_CURRENT -> creationCurrent(workspaceId, limit)
             LookupKind.TASK_CURRENT -> taskCurrent(workspaceId)
             LookupKind.CAPABILITY_FIND -> capabilityFind(request.query, limit)
             LookupKind.MODEL_FIND -> modelFind(request.query, limit)
@@ -90,6 +92,24 @@ class LaptopLookupService(
             ?: return LaptopLookupResult(LookupKind.WORKSPACE_READ.id, listOf(path), "file not found: $path", REV, LookupTrust.PROJECT_DATA, false)
         val (bounded, cut) = bound(content, CONTENT_CAP)
         return LaptopLookupResult(LookupKind.WORKSPACE_READ.id, listOf("${ws.id}/$path"), bounded, REV, LookupTrust.PROJECT_DATA, cut)
+    }
+
+    private fun creationCurrent(workspaceId: String?, limit: Int): LaptopLookupResult {
+        val workspace = core.state.value.workspaces.firstOrNull { it.id == workspaceId }
+        val plan = workspace?.creation
+            ?: return LaptopLookupResult(LookupKind.CREATION_CURRENT.id, emptyList(), "no creation plan in the pinned workspace", REV, LookupTrust.PROJECT_DATA, false)
+        val shots = plan.shots()
+        val summary = buildString {
+            append("creation: ${workspace.name} (${workspace.id}) · ${plan.kind}\n")
+            append("synopsis: ").append(plan.synopsis.take(400)).append('\n')
+            append("hierarchy: ${plan.seasons.size} seasons, ${plan.episodes().size} episodes, ${plan.scenes().size} scenes, ${shots.size} shots\n")
+            shots.take(limit).forEach { append("shot ${it.id}: ").append(it.prompt.take(100)).append('\n') }
+            append("characters: ").append(plan.characters.take(limit).joinToString { it.name }).append('\n')
+            append("asset metadata: ").append(plan.assets.take(limit).joinToString { "${it.name} [${it.rights}]" }).append('\n')
+            append("PLANNING_ONLY; renderers unconfigured; no generated media")
+        }
+        val (bounded, cut) = bound(summary)
+        return LaptopLookupResult(LookupKind.CREATION_CURRENT.id, listOf(workspace.id) + shots.take(limit).map { it.id }, bounded, REV, LookupTrust.PROJECT_DATA, cut || shots.size > limit)
     }
 
     private fun taskCurrent(workspaceId: String?): LaptopLookupResult {

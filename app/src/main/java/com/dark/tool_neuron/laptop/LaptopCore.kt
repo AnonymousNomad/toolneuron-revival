@@ -124,6 +124,7 @@ class LaptopCore(
         name: String,
         metadata: Map<String, String> = emptyMap(),
         initialFiles: Map<String, String> = emptyMap(),
+        creation: com.dark.tool_neuron.creation.CreationPlan? = null,
     ): Result<WorkspaceRef> = runCatching {
         val clean = name.trim()
         require(clean.isNotEmpty() && clean.length <= 64) { "workspace name must be 1..64 characters" }
@@ -139,13 +140,27 @@ class LaptopCore(
                 check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
                 target.writeText(text)
             }
-            val ref = WorkspaceRef(id, clean, nowMs(), metadata + ("created_by" to "user"))
-            mutate { it.copy(workspaces = it.workspaces + ref, activeWorkspaceId = id) }
+            val ref = WorkspaceRef(id, clean, nowMs(), metadata + ("created_by" to "user"), creation = creation)
+            mutate {
+                if (creation != null) check(it.permissions.any { grant -> grant.capabilityId == com.dark.tool_neuron.creation.CreationPlan.CAPABILITY && grant.granted }) { "Creator planning permission denied" }
+                it.copy(workspaces = it.workspaces + ref, activeWorkspaceId = id)
+            }
             ref
         } catch (failure: Throwable) {
             dir.deleteRecursively()
             throw failure
         }
+    }
+
+    fun updateCreationPlan(workspaceId: String, edit: (com.dark.tool_neuron.creation.CreationPlan) -> com.dark.tool_neuron.creation.CreationPlan): Result<com.dark.tool_neuron.creation.CreationPlan> = runCatching {
+        val next = mutate { state ->
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.creation.CreationPlan.CAPABILITY && it.granted }) { "Creator planning permission denied" }
+            val workspace = state.workspaces.singleOrNull { it.id == workspaceId } ?: error("Unknown project")
+            val plan = workspace.creation ?: error("Not a creation project")
+            val updated = edit(plan).also { it.validate() }
+            state.copy(workspaces = state.workspaces.map { if (it.id == workspaceId) it.copy(creation = updated) else it })
+        }
+        next.workspaces.single { it.id == workspaceId }.creation!!
     }
 
     fun recordVibeBuild(record: com.dark.tool_neuron.studio.VibeBuildRecord): Result<com.dark.tool_neuron.studio.VibeBuildRecord> = runCatching {

@@ -122,11 +122,15 @@ fun TNavigation(
             val activity = LocalContext.current as ComponentActivity
             val homeViewModel: HomeViewModel = hiltViewModel(activity)
             val studio: com.dark.tool_neuron.viewmodel.VibeViewModel = hiltViewModel(activity)
+            val creator: com.dark.tool_neuron.viewmodel.CreatorViewModel = hiltViewModel(activity)
             HomeScreen(
                 innerPadding = innerPadding,
                 actionWindowExpanded = actionWindowExpanded,
                 onActionWindowDismiss = onActionWindowDismiss,
                 onOpenModelManager = { navController.navigate(NavScreens.ModelManager.route) },
+                onOpenCreator = { projectId ->
+                    creator.open(projectId, onFailed = homeViewModel::projectActionFailed) { navController.navigate(NavScreens.Creator.route) }
+                },
                 onOpenVibe = { projectId ->
                     studio.open(projectId)
                     navController.navigate(NavScreens.Vibe.route)
@@ -244,6 +248,11 @@ fun TNavigation(
                     }
                 },
             )
+        }
+        composable(NavScreens.Creator.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val creator: com.dark.tool_neuron.viewmodel.CreatorViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.creator.CreatorScreen(innerPadding, { navController.navigate(it) }, creator)
         }
         composable(NavScreens.Vibe.route) {
             val activity = LocalContext.current as ComponentActivity

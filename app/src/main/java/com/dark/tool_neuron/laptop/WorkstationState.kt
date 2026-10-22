@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class WorkstationApp(val title: String) {
-    VIBE("Vibe Studio"), CIPHER("Cipher"), CHAT("Chat"), PROJECTS("Projects"), TERMINAL("Terminal"),
+    CREATOR("Creator"), VIBE("Vibe Studio"), CIPHER("Cipher"), CHAT("Chat"), PROJECTS("Projects"), TERMINAL("Terminal"),
     MODELS("Models"), ABILITIES("Abilities"), KNOWLEDGE("Knowledge"),
     FILES("Files"), EVIDENCE("Evidence"), SETTINGS("Settings"),
 }
