@@ -75,6 +75,7 @@ internal fun InstalledModelsTab(
     val dimens = LocalDimens.current
     val context = LocalContext.current
     val defaultEmbeddingId by viewModel.defaultEmbeddingModelId.collectAsStateWithLifecycle()
+    val localImport by viewModel.localImport.collectAsStateWithLifecycle()
 
     var selectedModel by remember { mutableStateOf<ModelInfo?>(null) }
     var showDeleteDialog by remember { mutableStateOf<ModelInfo?>(null) }
@@ -84,57 +85,74 @@ internal fun InstalledModelsTab(
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(
-                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
             var name = "model.gguf"
             var size = 0L
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIdx = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    val sizeIdx = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                    if (nameIdx >= 0) name = it.getString(nameIdx)
-                    if (sizeIdx >= 0) size = it.getLong(sizeIdx)
+            runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use {
+                    if (it.moveToFirst()) {
+                        val nameIdx = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        val sizeIdx = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (nameIdx >= 0) name = it.getString(nameIdx) ?: name
+                        if (sizeIdx >= 0 && !it.isNull(sizeIdx)) size = it.getLong(sizeIdx)
+                    }
                 }
             }
             pendingImport = Triple(uri, name, size)
         }
     }
 
-    if (models.isEmpty()) {
-        InstalledModelsEmptyState(
-            onImport = { filePicker.launch(arrayOf("application/octet-stream", "*/*")) }
-        )
-    } else {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = dimens.spacingMd, vertical = dimens.spacingSm),
-            verticalArrangement = Arrangement.spacedBy(dimens.spacingSm)
-        ) {
-            item(key = "import") {
-                ImportLocalCard {
-                    filePicker.launch(arrayOf("application/octet-stream", "*/*"))
+    Column(Modifier.fillMaxSize()) {
+        localImport?.let { progress ->
+            Column(Modifier.fillMaxWidth().padding(dimens.spacingMd)) {
+                Text(progress.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (progress.error != null) {
+                    Text(progress.error, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = viewModel::dismissImportError) { Text("Dismiss") }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(Modifier.size(20.dp))
+                        Text("Copying to device: ${formatBytes(progress.copiedBytes)}" +
+                            if (progress.totalBytes > 0) " / ${formatBytes(progress.totalBytes)}" else "")
+                    }
                 }
             }
-
-            items(models, key = { it.id }) { model ->
-                val isDefaultEmbedding = model.providerType == ProviderType.EMBEDDING &&
-                    model.id == defaultEmbeddingId
-                InstalledModelCard(
-                    model = model,
-                    isDeleting = deleteInProgress == model.id,
-                    isDefaultEmbedding = isDefaultEmbedding,
-                    onShowDetails = { selectedModel = model },
-                    onDelete = { showDeleteDialog = model },
-                    onLoad = { onLoad(model) },
-                    onUnload = onUnload,
-                    onToggleDefaultEmbedding = {
-                        viewModel.setDefaultEmbeddingModel(
-                            if (isDefaultEmbedding) null else model.id
-                        )
-                    },
+        }
+        Box(Modifier.weight(1f)) {
+            if (models.isEmpty()) {
+                InstalledModelsEmptyState(
+                    onImport = { filePicker.launch(arrayOf("application/octet-stream", "*/*")) }
                 )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = dimens.spacingMd, vertical = dimens.spacingSm),
+                    verticalArrangement = Arrangement.spacedBy(dimens.spacingSm)
+                ) {
+                    item(key = "import") {
+                        ImportLocalCard {
+                            filePicker.launch(arrayOf("application/octet-stream", "*/*"))
+                        }
+                    }
+
+                    items(models, key = { it.id }) { model ->
+                        val isDefaultEmbedding = model.providerType == ProviderType.EMBEDDING &&
+                            model.id == defaultEmbeddingId
+                        InstalledModelCard(
+                            model = model,
+                            isDeleting = deleteInProgress == model.id,
+                            isDefaultEmbedding = isDefaultEmbedding,
+                            onShowDetails = { selectedModel = model },
+                            onDelete = { showDeleteDialog = model },
+                            onLoad = { onLoad(model) },
+                            onUnload = onUnload,
+                            onToggleDefaultEmbedding = {
+                                viewModel.setDefaultEmbeddingModel(
+                                    if (isDefaultEmbedding) null else model.id
+                                )
+                            },
+                        )
+                    }
+                }
             }
         }
     }

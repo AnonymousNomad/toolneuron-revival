@@ -29,6 +29,8 @@ Prebuilt AARs in `libs/`:
 
 ## Build & Release
 
+- **Local GGUF import:** `ModelStoreViewModel.importLocalModel` copies SAF input into `<filesDir>/imported_models/` on IO via `DurableModelImport`. The helper uses a unique partial file, closes and syncs output, validates GGUF magic, then renames before publishing a `PathType.FILE` record with actual byte size. Copy errors/cancellation remove the partial. Failed registration rolls back the row before deleting the file; indeterminate rollback preserves the backing file. Original files and existing CONTENT_URI records are preserved. Installed and onboarding surfaces display progress/errors; onboarding advances after successful registration. Providers need not grant persistable URI permissions. This covers chat and embedding files, not voice imports. Abrupt-process-death orphan cleanup remains a Phase 7 recovery item.
+
 - **Dev (debug):** `./gradlew :app:compileDebugKotlin` to verify compilation. `./gradlew :app:installDebug` to install. Never `assemble + adb install`.
 - **Release:** built **from Android Studio**, signed via `local.properties` keys `TN_KEYSTORE_PATH / TN_KEYSTORE_PASSWORD / TN_KEY_ALIAS / TN_KEY_PASSWORD`. If any are missing, release falls back to unsigned so dev flow isn't blocked.
 - **Native:** `./gradlew :hxs_encryptor:externalNativeBuildDebug` — BoringSSL + liboqs fetched via CMake FetchContent. The LSP flags `'openssl/mem.h' not found` etc. as false positives — build-green is the source of truth, not clangd.

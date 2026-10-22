@@ -31,6 +31,7 @@ import com.dark.tool_neuron.repo.ValidationResult
 import com.dark.tool_neuron.data.AppPreferences
 import com.dark.tool_neuron.service.inference.InferenceClient
 import com.dark.tool_neuron.util.GgufMeta
+import com.dark.tool_neuron.util.DurableModelImport
 import com.dark.tool_neuron.util.ModelPurpose
 import com.dark.tool_neuron.util.ModelPurposeClassifier
 import com.dark.tool_neuron.util.extractParameterCount
@@ -40,6 +41,8 @@ import com.dark.tool_neuron.voice.VoiceKind
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,7 +52,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.security.MessageDigest
+import java.io.File
 import javax.inject.Inject
 
 enum class StoreTab { MODELS, INSTALLED, SETTINGS }
@@ -60,6 +65,13 @@ data class RepoGroupInfo(
     val displayName: String,
     val author: String,
     val modelCount: Int,
+)
+
+data class LocalImportProgress(
+    val fileName: String,
+    val copiedBytes: Long,
+    val totalBytes: Long,
+    val error: String? = null,
 )
 
 @HiltViewModel
@@ -82,6 +94,13 @@ class ModelStoreViewModel @Inject constructor(
     val activeDownloadCount: StateFlow<Int> = downloadCoordinator.activeCount
     val repositories: StateFlow<List<HFRepository>> = repoDataStore.repositories
     val defaultEmbeddingModelId: StateFlow<String?> = ragManager.defaultEmbeddingModelId
+
+    private val _localImport = MutableStateFlow<LocalImportProgress?>(null)
+    val localImport: StateFlow<LocalImportProgress?> = _localImport.asStateFlow()
+
+    fun dismissImportError() {
+        if (_localImport.value?.error != null) _localImport.value = null
+    }
 
     fun setDefaultEmbeddingModel(modelId: String?) {
         ragManager.setDefaultEmbeddingModelId(modelId)
@@ -782,13 +801,47 @@ class ModelStoreViewModel @Inject constructor(
         fileName: String,
         fileSize: Long,
         providerType: ProviderType = ProviderType.GGUF,
+        onImported: () -> Unit = {},
     ) {
-        modelRepo.insert(ModelInfo(
-            id = checksumId(uri.toString(), fileName, fileSize),
-            name = fileName.removeSuffix(".gguf"),
-            path = uri.toString(), pathType = PathType.CONTENT_URI,
-            providerType = providerType, fileSize = fileSize,
-        ))
+        if (_localImport.value?.let { it.error == null } == true) return
+        _localImport.value = LocalImportProgress(fileName, 0, fileSize)
+        viewModelScope.launch(Dispatchers.IO) {
+            var imported: File? = null
+            var publicationStarted = false
+            try {
+                require(providerType == ProviderType.GGUF || providerType == ProviderType.EMBEDDING) {
+                    "Choose a chat or embedding GGUF model"
+                }
+                val copied = DurableModelImport.copy(
+                    File(context.filesDir, "imported_models"),
+                    { checkNotNull(context.contentResolver.openInputStream(uri)) { "Cannot read selected model" } },
+                ) { bytes ->
+                    ensureActive()
+                    _localImport.value = LocalImportProgress(fileName, bytes, fileSize)
+                }
+                imported = copied
+                ensureActive()
+                val id = checksumId(copied.absolutePath, fileName, copied.length())
+                publicationStarted = true
+                DurableModelImport.publish(copied, { file ->
+                    modelRepo.insert(ModelInfo(
+                        id = id,
+                        name = fileName.removeSuffix(".gguf"),
+                        path = file.absolutePath, pathType = PathType.FILE,
+                        providerType = providerType, fileSize = file.length(),
+                    ))
+                }, { modelRepo.delete(id) })
+                _localImport.value = null
+                withContext(Dispatchers.Main.immediate) { onImported() }
+            } catch (cancelled: CancellationException) {
+                _localImport.value = null
+                throw cancelled
+            } catch (error: Exception) {
+                _localImport.value = _localImport.value?.copy(error = error.message?.take(200) ?: "Import failed")
+            } finally {
+                if (!publicationStarted) imported?.delete()
+            }
+        }
     }
 
     suspend fun getModelConfig(modelId: String): ModelConfig? = modelRepo.getConfig(modelId)

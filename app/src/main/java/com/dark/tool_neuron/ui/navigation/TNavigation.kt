@@ -241,17 +241,22 @@ fun TNavigation(
         composable(NavScreens.ModelSetup.route) {
             val activity = LocalContext.current as ComponentActivity
             val storeVm: ModelStoreViewModel = hiltViewModel(activity)
+            val localImport by storeVm.localImport.collectAsStateWithLifecycle()
 
             ModelSetupScreen(
                 innerPadding = innerPadding,
+                localImport = localImport,
                 onPackSelected = { packId ->
                     storeVm.downloadPack(packId)
                     onModelSetupComplete()
                 },
                 onOpenStore = { navController.navigate(NavScreens.ModelStore.route) },
                 onLocalImport = { uri, name, size, type ->
-                    storeVm.importLocalModel(uri, name, size, type)
-                    onModelSetupComplete()
+                    storeVm.importLocalModel(uri, name, size, type) {
+                        if (navController.currentBackStackEntry?.destination?.route == NavScreens.ModelSetup.route) {
+                            onModelSetupComplete()
+                        }
+                    }
                 },
                 onSkip = { onModelSetupComplete() }
             )

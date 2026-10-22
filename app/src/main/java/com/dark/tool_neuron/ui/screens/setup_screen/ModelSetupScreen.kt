@@ -1,6 +1,5 @@
 package com.dark.tool_neuron.ui.screens.setup_screen
 
-import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,6 +51,8 @@ import com.dark.tool_neuron.ui.theme.LocalDimens
 import com.dark.tool_neuron.ui.theme.LocalTnShapes
 import com.dark.tool_neuron.ui.theme.Motion
 import com.dark.tool_neuron.viewmodel.ModelStoreViewModel
+import com.dark.tool_neuron.viewmodel.LocalImportProgress
+import com.dark.download_manager.formatBytes
 import kotlinx.coroutines.delay
 
 private enum class SetupPath(val label: String) {
@@ -94,6 +95,7 @@ fun ModelSetupScreen(
     onOpenStore: () -> Unit,
     onLocalImport: (uri: Uri, name: String, size: Long, type: ProviderType) -> Unit,
     onSkip: () -> Unit,
+    localImport: LocalImportProgress? = null,
 ) {
     val dimens = LocalDimens.current
     val context = LocalContext.current
@@ -104,19 +106,16 @@ fun ModelSetupScreen(
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }
             var name = "model.gguf"
             var size = 0L
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (nameIdx >= 0) name = cursor.getString(nameIdx)
-                    if (sizeIdx >= 0) size = cursor.getLong(sizeIdx)
+            runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIdx >= 0) name = cursor.getString(nameIdx) ?: name
+                        if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) size = cursor.getLong(sizeIdx)
+                    }
                 }
             }
             pendingImport = Triple(uri, name, size)
@@ -140,6 +139,14 @@ fun ModelSetupScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Spacer(Modifier.weight(1f))
+
+            localImport?.let { progress ->
+                Text(
+                    text = progress.error ?: "Copying ${progress.fileName}: ${formatBytes(progress.copiedBytes)}",
+                    color = if (progress.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                if (progress.error != null) Text("Choose the file again to retry, or skip for now.")
+            }
 
             AnimatedVisibility(
                 visible = visible,

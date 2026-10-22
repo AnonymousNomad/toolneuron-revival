@@ -32,9 +32,11 @@ build tools 36/37, NDK 28.2.13676358 and CMake 3.31.4 are installed outside the 
 Source `/workspace/.setup/activate.sh` in each shell. SDK package 37 is named
 `platforms;android-37.0`, rather than `platforms;android-37`.
 
-The live network policy denies `boringssl.googlesource.com`, required by the
-existing native crypto CMake build. Its domain addition is saved in the environment
-draft; saving a draft does not apply that policy. TLS and artifact verification
-remain enabled. No signing material or physical Android device is configured.
+A direct HTTPS probe to `boringssl.googlesource.com` is denied, but the actual
+CMake dependency checkout succeeds through the existing Git proxy and resolves
+the pinned `617634bc015344093f5ea0b0a5b653c924cfa20d` commit. The draft therefore
+preserves the original network settings; no domain addition is required for that
+checkout. TLS and artifact verification remain enabled. No signing material or
+physical Android device is configured.
 
 This document records inspection, not acceptance of Phase 0 or any later phase.
