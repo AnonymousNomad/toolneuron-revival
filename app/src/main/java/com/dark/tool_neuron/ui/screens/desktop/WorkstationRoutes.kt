@@ -26,6 +26,17 @@ object WorkstationRoutes {
         launchSingleTop = true
         restoreState = false
     }
+    private val modelChildren = setOf(NavScreens.ModelConfig.route, NavScreens.ModelManager.route,
+        NavScreens.HfExplorer.route, NavScreens.HfRepoDetail.route, NavScreens.Downloads.route)
+    private val settingsChildren = setOf(NavScreens.Storage.route, NavScreens.AppGuide.route,
+        NavScreens.GuideChat.route, NavScreens.GuideModels.route, NavScreens.GuideRag.route,
+        NavScreens.GuideVlm.route, NavScreens.GuideVoice.route, NavScreens.GuideSecurity.route,
+        NavScreens.GuideThemes.route, NavScreens.GuideServer.route, NavScreens.GuidePlugins.route,
+        NavScreens.GuideImages.route)
     fun app(route: String?): WorkstationApp? = routes.entries.firstOrNull { it.value == route }?.key
-        ?: if (route?.startsWith("settings_") == true) WorkstationApp.SETTINGS else null
+        ?: when {
+            route in modelChildren -> WorkstationApp.MODELS
+            route in settingsChildren || route?.startsWith("settings_") == true -> WorkstationApp.SETTINGS
+            else -> null
+        }
 }

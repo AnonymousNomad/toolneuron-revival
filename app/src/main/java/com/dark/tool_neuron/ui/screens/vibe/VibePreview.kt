@@ -2,6 +2,14 @@ package com.dark.tool_neuron.ui.screens.vibe
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.view.View
+import android.widget.FrameLayout
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import com.dark.tool_neuron.ui.screens.desktop.Retro
 import android.webkit.ConsoleMessage
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
@@ -31,10 +39,14 @@ fun VibePreview(
     onStatus: (String) -> Unit,
     onFatal: () -> Unit,
 ) {
-    AndroidView(
+    var unavailable by remember(workspaceId, buildId) { mutableStateOf<String?>(null) }
+    unavailable?.let { Text(it, color = Retro.Error); return }
+    AndroidView<View>(
         modifier = modifier,
         factory = { context ->
-            WebView(context).apply {
+            var created: WebView? = null
+            try {
+                WebView(context).also { created = it }.apply {
                 settings.apply {
                     javaScriptEnabled = true
                     blockNetworkLoads = true
@@ -78,9 +90,18 @@ fun VibePreview(
                 }
                 onView(this)
                 loadUrl(VibePreviewPolicy.baseUrl(workspaceId, buildId) + "index.html")
+                }
+            } catch (failure: RuntimeException) {
+                created?.let { runCatching { it.destroy() } }
+                onView(null)
+                unavailable = "Preview initialization failed (${failure.javaClass.simpleName.take(64)}). Close and reopen preview, or check the installed Android WebView provider. Source, builds and export remain available."
+                FrameLayout(context)
             }
         },
-        onRelease = { view -> onView(null); view.stopLoading(); view.destroy() },
+        onRelease = { view ->
+            onView(null)
+            if (view is WebView) { view.stopLoading(); view.destroy() }
+        },
     )
 }
 

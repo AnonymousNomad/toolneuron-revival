@@ -59,6 +59,7 @@ private fun AppScaffoldInner() {
     val laptopState by workstation.state.collectAsStateWithLifecycle()
     val windowStatus by workstation.status.collectAsStateWithLifecycle()
     val currentApp = WorkstationRoutes.app(currentRoute)
+    val workstationReady by scaffoldViewModel.workstationReady.collectAsStateWithLifecycle()
 
     fun navigateWindow(route: String) {
         navController.navigate(route, WorkstationRoutes.navigationOptions())
@@ -73,12 +74,13 @@ private fun AppScaffoldInner() {
         workstation.minimize(app).onSuccess(::showWindow).onFailure { navigateWindow(NavScreens.Desktop.route) }
     }
 
-    LaunchedEffect(currentRoute) {
+    LaunchedEffect(currentRoute, workstationReady) {
+        if (!scaffoldViewModel.refreshWorkstationReadiness()) return@LaunchedEffect
         if (currentApp != null) workstation.open(currentApp)
         else if (currentRoute == NavScreens.Desktop.route) workstation.desktop()
     }
 
-    BackHandler(enabled = WorkstationRoutes.isRoot(currentRoute)) { minimizeWindow() }
+    BackHandler(enabled = workstationReady && WorkstationRoutes.isRoot(currentRoute)) { minimizeWindow() }
     val actionWindowExpanded by homeViewModel.actionWindowExpanded.collectAsStateWithLifecycle()
     val pillState by homeViewModel.pillState.collectAsStateWithLifecycle()
     val chats by homeViewModel.chats.collectAsStateWithLifecycle()
@@ -198,14 +200,14 @@ private fun AppScaffoldInner() {
                     onMenuClick = {
                         if (!isExpanded) scope.launch { drawerState.open() }
                     },
-                    onBack = { if (WorkstationRoutes.isRoot(currentRoute)) minimizeWindow() else navController.popBackStack() },
+                    onBack = { if (workstationReady && WorkstationRoutes.isRoot(currentRoute)) minimizeWindow() else navController.popBackStack() },
                     onNavigateToStore = { navController.navigate(NavScreens.ModelStore.route) },
                     onNavigateToDesktop = { navController.navigate(NavScreens.Desktop.route) },
                 )
             },
             bottomBar = {
                 Column {
-                    if (currentApp != null || currentRoute == NavScreens.Desktop.route) {
+                    if (workstationReady && (currentApp != null || currentRoute == NavScreens.Desktop.route)) {
                         WorkstationTaskbar(
                             session = laptopState.workstation,
                             current = currentApp,
@@ -264,7 +266,7 @@ private fun AppScaffoldInner() {
                 actionWindowExpanded = actionWindowExpanded,
                 onActionWindowDismiss = homeViewModel::collapseActionWindow,
                 onUnlocked = {
-                    navController.navigate(NavScreens.Desktop.route) {
+                    navController.navigate(scaffoldViewModel.resolveStartDestination()) {
                         popUpTo(NavScreens.PasswordScreen.route) { inclusive = true }
                     }
                 },
