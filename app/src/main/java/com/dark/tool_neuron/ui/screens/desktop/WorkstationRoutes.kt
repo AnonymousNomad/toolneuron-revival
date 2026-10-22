@@ -26,7 +26,7 @@ object WorkstationRoutes {
         launchSingleTop = true
         restoreState = false
     }
-    private val modelChildren = setOf(NavScreens.ModelConfig.route, NavScreens.ModelManager.route,
+    private val modelChildren = setOf(NavScreens.ModelLab.route, NavScreens.ModelConfig.route, NavScreens.ModelManager.route,
         NavScreens.HfExplorer.route, NavScreens.HfRepoDetail.route, NavScreens.Downloads.route)
     private val settingsChildren = setOf(NavScreens.Storage.route, NavScreens.AppGuide.route,
         NavScreens.GuideChat.route, NavScreens.GuideModels.route, NavScreens.GuideRag.route,

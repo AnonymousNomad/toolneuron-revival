@@ -78,6 +78,36 @@ class LaptopCore(
 
     fun closeWorkstationApp(app: WorkstationApp): Result<Unit> = updateWorkstation { it.close(app) }
 
+    fun recordQualificationRun(run: ModelLabRun): Result<Unit> = runCatching {
+        val definition = run.validate()
+        val evidence = definition.checks.map { check ->
+            val observation = run.observations.firstOrNull { it.checkId == check.id }
+            EvidenceRecord(shortId("ev"), null, EvidenceKind.CHECK,
+                if (observation == null) "Model Lab ${run.id}/${check.id}: UNKNOWN; run started, no completed observation yet"
+                else "Model Lab ${run.id}/${check.id}: ${observation.verdict}; completed=${observation.completed}; ${observation.error ?: observation.output.take(800)}",
+                listOf("model-lab:${run.id}", "check:${check.id}"), createdAtMs = run.finishedAtMs ?: run.startedAtMs)
+        }
+        val record = QualificationRecord(run.scope, run.batteryId, definition.checks.mapIndexed { index, check ->
+            val observed = run.observations.firstOrNull { it.checkId == check.id }
+            QualificationCheck(check.id, observed?.verdict ?: QualificationVerdict.UNKNOWN, listOf(evidence[index].id), observed?.measurements)
+        }, run.finishedAtMs ?: run.startedAtMs)
+        mutate { state ->
+            check(state.permissions.any { it.capabilityId == "model.worker.delegate@1" && it.granted }) { "Grant local model invocation in Abilities first" }
+            check(state.resident.activeSessionId == null) { "Stop Cipher before qualification" }
+            state.modelLabRuns.firstOrNull { it.id == run.id }?.let { previous ->
+                require(previous.scope == run.scope && previous.batteryId == run.batteryId && previous.startedAtMs == run.startedAtMs && previous.finishedAtMs == null) { "Run identity already completed or changed" }
+            }
+            val keptRuns = (state.modelLabRuns.filterNot { it.id == run.id } + run).takeLast(100)
+            val keptRunRefs = keptRuns.map { "model-lab:${it.id}" }.toSet()
+            val keptEvidenceIds = (state.evidence + evidence).filter { item -> item.refs.any { it in keptRunRefs } }.map { it.id }.toSet()
+            state.copy(modelLabRuns = keptRuns,
+                qualifications = (state.qualifications + record).filter { qualification ->
+                    qualification.checks.all { check -> check.evidenceRefs.any { it in keptEvidenceIds } }
+                }.takeLast(400), evidence = state.evidence + evidence)
+        }
+        Unit
+    }
+
     fun assignCipher(assignment: CipherAssignment?): Result<Unit> = runCatching {
         mutate {
             check(it.resident.activeSessionId == null) { "Stop Cipher before changing its assignment" }

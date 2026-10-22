@@ -12,6 +12,7 @@ interface IInferenceService {
     void loadModel(String modelPath, String configJson, IModelLoadCallback callback);
     void loadModelFromFd(in ParcelFileDescriptor pfd, String configJson, IModelLoadCallback callback);
     void unloadModel();
+    boolean unloadModelForLoad(String loadId);
     boolean isModelLoaded();
     String getModelInfo();
 

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onCompletion
 import com.dark.tool_neuron.util.GgufHeader
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -84,7 +85,7 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
         }
     }
 
-    fun generate(prompt: String, maxTokens: Int, multiTurn: Boolean = false, expectedLoadId: String? = null): Flow<LocalGenerationEvent> =
+    fun generate(prompt: String, maxTokens: Int, multiTurn: Boolean = false, expectedLoadId: String? = null, cleanup: () -> Unit = {}): Flow<LocalGenerationEvent> =
         guardedGeneration(null, expectedLoadId) { backend ->
             flow {
                 require(maxTokens > 0) { "Token limit must be positive" }
@@ -99,7 +100,7 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
                     }
                 }
                 if (!terminal) emit(LocalGenerationEvent.Error("Runtime stream ended without completion"))
-            }
+            }.onCompletion { cleanup() }
         }
 
     fun <T> legacyGeneration(runtimeId: String, source: () -> Flow<T>): Flow<T> =
@@ -139,6 +140,22 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
     }
 
     fun cancel() { active?.cancel() }
+
+    suspend fun unloadIfCurrent(loadId: String): Boolean {
+        if (_status.value.loadId == loadId) cancel()
+        return mutex.withLock {
+            if (_status.value.loadId != loadId) return@withLock false
+            try {
+                active?.unload()
+                active = null
+                _status.value = LocalRuntimeStatus()
+                true
+            } catch (failure: Throwable) {
+                _status.value = _status.value.copy(phase = LocalRuntimePhase.ERROR, loadId = null, error = failure.message)
+                throw failure
+            }
+        }
+    }
 
     suspend fun unload() {
         cancel()

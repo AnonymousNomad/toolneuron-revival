@@ -503,6 +503,10 @@ object InferenceClient {
         try { ensureBound().unloadModel() } catch (_: Exception) {}
     }
 
+    suspend fun unloadModelForLoad(loadId: String): Boolean = withContext(Dispatchers.IO) {
+        ensureBound().unloadModelForLoad(loadId).also { if (it) _isModelLoaded.value = false }
+    }
+
     fun getModelInfo(): String? =
         try { _service.value?.getModelInfo() } catch (_: Exception) { null }
 

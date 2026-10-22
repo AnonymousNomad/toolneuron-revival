@@ -50,6 +50,7 @@ import com.dark.tool_neuron.viewmodel.CipherViewModel
 fun CipherScreen(
     innerPadding: PaddingValues,
     viewModel: CipherViewModel = hiltViewModel(),
+    onOpenModelLab: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -105,6 +106,7 @@ fun CipherScreen(
                     Text("Cipher · local/offline", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     TextButton(onClick = { showInfo = true }) { Text("Info") }
                 }
+                TextButton(onClick = onOpenModelLab) { Text("Model Lab / qualification") }
                 Text("Slot: ${slot.status} · ${slot.reason}", style = MaterialTheme.typography.bodySmall)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (!active) Row(horizontalArrangement = Arrangement.spacedBy(dimens.spacingXs)) {

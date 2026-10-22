@@ -720,7 +720,7 @@ class HomeViewModel @Inject constructor(
 
         val isFirstTurn = chatRepo.getMessages(chatId).count { it.role == ROLE_USER } == 1
 
-        if (InferenceClient.isModelLoaded.value) {
+        if (InferenceClient.isModelLoaded.value && (modelSession.loadState.value as? ModelLoadState.Active)?.modelId == active.id) {
             runGeneration(chatId, isFirstTurn, trimmed)
         } else {
             viewModelScope.launch {

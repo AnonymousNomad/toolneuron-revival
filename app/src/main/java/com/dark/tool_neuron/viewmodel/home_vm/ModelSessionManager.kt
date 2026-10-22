@@ -143,6 +143,12 @@ class ModelSessionManager @Inject constructor(
         }
     }
 
+    fun invalidateForExternalLoad() {
+        _supportsThinking.value = false
+        _userSystemPrompt.value = ""
+        _loadState.value = ModelLoadState.Idle
+    }
+
     suspend fun unload() {
         if (InferenceClient.isVlmLoaded.value) {
             InferenceClient.releaseVlmProjector()

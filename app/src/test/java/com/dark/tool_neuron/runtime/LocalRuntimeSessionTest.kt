@@ -77,6 +77,33 @@ class LocalRuntimeSessionTest {
         assertTrue(runCatching { session.generate("prompt", 2).toList() }.isFailure)
     }
 
+    @Test fun oldConsumersCannotUnloadAReplacementModel() = runBlocking {
+        val backend = ContractBackend()
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        session.load(backend.id, model().path, loadId = "first")
+        session.load(backend.id, model().path, loadId = "second")
+        val unloaded = backend.unloads
+        assertFalse(session.unloadIfCurrent("first"))
+        assertEquals(unloaded, backend.unloads)
+        assertEquals("second", session.status.value.loadId)
+        assertTrue(session.unloadIfCurrent("second"))
+        assertEquals(LocalRuntimePhase.EMPTY, session.status.value.phase)
+    }
+
+    @Test fun generationCleanupRunsBeforeTheGuardIsReleased() = runBlocking {
+        val backend = ContractBackend()
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        session.load(backend.id, model().path)
+        var cleaned = false
+        session.generate("prompt", 2, cleanup = {
+            assertEquals(LocalRuntimePhase.GENERATING, session.status.value.phase)
+            assertTrue(runCatching { session.configure(backend.id) { error("must not enter") } }.isFailure)
+            cleaned = true
+        }).toList()
+        assertTrue(cleaned)
+        assertEquals(LocalRuntimePhase.READY, session.status.value.phase)
+    }
+
     @Test fun unknownRuntimeDoesNotSelectADefault() = runBlocking {
         val backend = ContractBackend()
         val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))

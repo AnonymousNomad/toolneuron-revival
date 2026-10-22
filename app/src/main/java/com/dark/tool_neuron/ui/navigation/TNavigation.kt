@@ -200,7 +200,13 @@ fun TNavigation(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToHfExplorer = { navController.navigate(NavScreens.HfExplorer.route) },
                 onNavigateToDownloads = { navController.navigate(NavScreens.Downloads.route) },
+                onOpenModelLab = { navController.navigate(NavScreens.ModelLab.route) },
             )
+        }
+        composable(NavScreens.ModelLab.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val lab: com.dark.tool_neuron.viewmodel.ModelLabViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.model_store.ModelLabScreen(innerPadding, { navController.navigate(it) }, lab)
         }
         composable(NavScreens.Downloads.route) {
             DownloadsScreen(innerPadding = innerPadding)
@@ -216,7 +222,7 @@ fun TNavigation(
             TerminalScreen(innerPadding = innerPadding)
         }
         composable(NavScreens.Cipher.route) {
-            CipherScreen(innerPadding = innerPadding)
+            CipherScreen(innerPadding = innerPadding, onOpenModelLab = { navController.navigate(NavScreens.ModelLab.route) })
         }
         composable(NavScreens.SetupCipher.route) {
             SetupCipherScreen(

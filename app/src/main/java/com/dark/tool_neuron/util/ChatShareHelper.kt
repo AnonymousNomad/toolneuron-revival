@@ -16,6 +16,7 @@ object ChatShareHelper {
         body: String,
         mimeType: String,
         title: String,
+        chooserTitle: String = "Share chat",
     ) {
         val dir = File(context.cacheDir, EXPORT_SUBDIR).apply { mkdirs() }
         val file = File(dir, filename)
@@ -29,7 +30,7 @@ object ChatShareHelper {
             putExtra(Intent.EXTRA_SUBJECT, title)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val chooser = Intent.createChooser(send, "Share chat").apply {
+        val chooser = Intent.createChooser(send, chooserTitle).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(chooser)

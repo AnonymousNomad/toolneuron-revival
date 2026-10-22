@@ -21,6 +21,7 @@ data class CipherLaptop(
     val resident: ResidentState = ResidentState(),
     val workstation: WorkstationSession = WorkstationSession(),
     val cipherAssignment: CipherAssignment? = null,
+    val modelLabRuns: List<ModelLabRun> = emptyList(),
     val qualifications: List<QualificationRecord> = emptyList(),
     val vibeBuilds: List<com.dark.tool_neuron.studio.VibeBuildRecord> = emptyList(),
 )

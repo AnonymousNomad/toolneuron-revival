@@ -457,6 +457,10 @@ class InferenceService : Service() {
             }
         }
 
+        override fun unloadModelForLoad(loadId: String): Boolean = runBlocking(Dispatchers.IO) {
+            localRuntime.unloadIfCurrent(loadId)
+        }
+
         override fun isModelLoaded(): Boolean = engine.isLoaded && localRuntime.status.value.phase in setOf(LocalRuntimePhase.READY, LocalRuntimePhase.GENERATING)
 
         override fun getModelInfo(): String? = if (isModelLoaded()) runtimeInfo(engine.getModelInfoJson() ?: "{}", localRuntime.status.value.loadedRuntime ?: GgmlBackend.ID) else null
@@ -487,9 +491,8 @@ class InferenceService : Service() {
                 return
             }
             collectLocalFlow(
-                flow = localRuntime.generate(augmented, maxTokens, multiTurn = true),
+                flow = localRuntime.generate(augmented, maxTokens, multiTurn = true, cleanup = { engine.resetKvCache() }),
                 callback = callback,
-                onComplete = { try { engine.resetKvCache() } catch (_: Throwable) {} },
             )
         }
 
@@ -1181,21 +1184,22 @@ class InferenceService : Service() {
         (try { JSONObject(info) } catch (_: Exception) { JSONObject() })
             .put("runtimeId", runtimeId).put("loadId", loadId).toString()
 
-    private fun collectLocalFlow(
-        flow: Flow<LocalGenerationEvent>,
-        callback: IGenerationCallback,
-        onComplete: () -> Unit = {},
-    ) {
+    private fun collectLocalFlow(flow: Flow<LocalGenerationEvent>, callback: IGenerationCallback) {
         scope.launch(Dispatchers.IO) {
+            var terminal: LocalGenerationEvent? = null
             try {
                 flow.collect { event ->
                     when (event) {
                         is LocalGenerationEvent.Token -> callback.onToken(event.text)
-                        is LocalGenerationEvent.Done -> callback.onDone()
-                        is LocalGenerationEvent.Error -> callback.onError(event.message)
+                        is LocalGenerationEvent.Done, is LocalGenerationEvent.Error -> terminal = event
                         is LocalGenerationEvent.Metrics -> callback.onMetrics(JSONObject(event.values).toString())
                         is LocalGenerationEvent.Progress -> callback.onProgress(event.value)
                     }
+                }
+                when (val result = terminal) {
+                    is LocalGenerationEvent.Done -> callback.onDone()
+                    is LocalGenerationEvent.Error -> callback.onError(result.message)
+                    else -> callback.onError("Runtime stream ended without completion")
                 }
             } catch (_: DeadObjectException) {
                 localRuntime.cancel()
@@ -1204,8 +1208,6 @@ class InferenceService : Service() {
                 throw cancelled
             } catch (failure: Exception) {
                 try { callback.onError(failure.message ?: "Runtime generation failed") } catch (_: Exception) {}
-            } finally {
-                try { onComplete() } catch (_: Throwable) {}
             }
         }
     }
@@ -1267,6 +1269,7 @@ class InferenceService : Service() {
             engine.setSampling(0f, 1, 1f, 0f, 0, 5f, 0.1f, 1)
             check(engine.updateSamplerParams("""{"repeatPenalty":1.0,"frequencyPenalty":0.0,"presencePenalty":0.0,"penaltyLastN":0,"dryMultiplier":0.0,"dryBase":1.75,"dryAllowedLength":2,"dryPenaltyLastN":0,"xtcProbability":0.0,"xtcThreshold":0.1}""")) { "Native sampler profile rejected" }
             engine.setSystemPrompt("")
+            engine.setThinkingEnabled(false)
             engine.setLogitBias("{}")
             engine.setChatTemplate("""{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}{% endfor %}{{ '<|im_start|>assistant\n' }}""")
             engine.setKvPolicy(0, config.optInt("contextSize", 4096), false)
