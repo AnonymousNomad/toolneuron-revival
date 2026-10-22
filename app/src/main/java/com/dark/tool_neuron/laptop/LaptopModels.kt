@@ -45,6 +45,7 @@ data class WorkspaceRef(
     val conversationIds: List<String> = emptyList(),
     val creation: com.dark.tool_neuron.creation.CreationPlan? = null,
     val companion: com.dark.tool_neuron.companion.CompanionPlan? = null,
+    val vibeDraft: com.dark.tool_neuron.studio.VibeDraft? = null,
 )
 
 @Serializable

@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppScaffold() {
     ProvideWindowMetrics {
-        AppScaffoldInner()
+        ModelImportHost { AppScaffoldInner() }
     }
 }
 

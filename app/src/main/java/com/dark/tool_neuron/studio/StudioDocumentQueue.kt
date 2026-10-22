@@ -22,15 +22,17 @@ class StudioDocumentQueue {
         capture = bytes.copyOf()
         return true
     }
-    @Synchronized fun completeArchive(destination: String?) {
+    @Synchronized fun completeArchive(destination: String?): Boolean {
         val target = archive
         archive = null
         if (target != null && destination != null) ready.addLast(StudioDocumentWork.Archive(target, destination))
+        return target != null || destination == null
     }
-    @Synchronized fun completeCapture(destination: String?) {
+    @Synchronized fun completeCapture(destination: String?): Boolean {
         val png = capture
         capture = null
         if (png != null && destination != null) ready.addLast(StudioDocumentWork.Capture(png, destination))
+        return png != null || destination == null
     }
     @Synchronized fun take(unlocked: Boolean, granted: Boolean, busy: Boolean): StudioDocumentWork? {
         if (!granted) { clear(); return null }

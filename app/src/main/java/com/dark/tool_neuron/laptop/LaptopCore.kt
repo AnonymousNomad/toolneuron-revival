@@ -198,6 +198,19 @@ class LaptopCore(
         Unit
     }
 
+    fun saveVibeDraft(workspaceId: String, draft: com.dark.tool_neuron.studio.VibeDraft?, stillCurrent: () -> Boolean = { true }): Result<Unit> = runCatching {
+        draft?.validate()
+        mutate { state ->
+            check(stillCurrent()) { "Draft superseded" }
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.studio.VibeStudio.CAPABILITY && it.granted }) { "Vibe permission denied" }
+            require(state.workspaces.any { it.id == workspaceId }) { "Unknown project" }
+            val updated = state.workspaces.map { if (it.id == workspaceId) it.copy(vibeDraft = draft) else it }
+            require(updated.sumOf { it.vibeDraft?.text?.length ?: 0 } <= 2_000_000) { "Draft storage is full; save or discard another project draft" }
+            state.copy(workspaces = updated)
+        }
+        Unit
+    }
+
     fun rememberVibeSource(workspaceId: String, path: String): Result<Unit> = runCatching {
         require(path.length in 1..160 && path.matches(Regex("[A-Za-z0-9_./-]+")) && !path.startsWith('/') &&
             path.split('/').all { it.isNotEmpty() && !it.startsWith('.') }) { "Invalid source resume path" }

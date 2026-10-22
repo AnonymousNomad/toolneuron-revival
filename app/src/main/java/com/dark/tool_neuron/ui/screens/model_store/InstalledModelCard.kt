@@ -79,27 +79,7 @@ internal fun InstalledModelsTab(
 
     var selectedModel by remember { mutableStateOf<ModelInfo?>(null) }
     var showDeleteDialog by remember { mutableStateOf<ModelInfo?>(null) }
-    var pendingImport by remember {
-        mutableStateOf<Triple<android.net.Uri, String, Long>?>(null)
-    }
-
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            var name = "model.gguf"
-            var size = 0L
-            runCatching {
-                context.contentResolver.query(uri, null, null, null, null)?.use {
-                    if (it.moveToFirst()) {
-                        val nameIdx = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        val sizeIdx = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                        if (nameIdx >= 0) name = it.getString(nameIdx) ?: name
-                        if (sizeIdx >= 0 && !it.isNull(sizeIdx)) size = it.getLong(sizeIdx)
-                    }
-                }
-            }
-            pendingImport = Triple(uri, name, size)
-        }
-    }
+    val pickModel = com.dark.tool_neuron.ui.screens.system_ui.LocalModelImportPicker.current
 
     Column(Modifier.fillMaxSize()) {
         localImport?.let { progress ->
@@ -120,7 +100,7 @@ internal fun InstalledModelsTab(
         Box(Modifier.weight(1f)) {
             if (models.isEmpty()) {
                 InstalledModelsEmptyState(
-                    onImport = { filePicker.launch(arrayOf("application/octet-stream", "*/*")) }
+                    onImport = { pickModel() }
                 )
             } else {
                 LazyColumn(
@@ -130,7 +110,7 @@ internal fun InstalledModelsTab(
                 ) {
                     item(key = "import") {
                         ImportLocalCard {
-                            filePicker.launch(arrayOf("application/octet-stream", "*/*"))
+                            pickModel()
                         }
                     }
 
@@ -175,16 +155,7 @@ internal fun InstalledModelsTab(
         )
     }
 
-    pendingImport?.let { (uri, name, size) ->
-        ModelImportTypePicker(
-            fileName = name,
-            onPick = { type ->
-                viewModel.importLocalModel(uri, name, size, type)
-                pendingImport = null
-            },
-            onDismiss = { pendingImport = null },
-        )
-    }
+
 }
 
 @Composable

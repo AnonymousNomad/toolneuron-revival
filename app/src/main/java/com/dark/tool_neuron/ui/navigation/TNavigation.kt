@@ -285,6 +285,7 @@ fun TNavigation(
             val activity = LocalContext.current as ComponentActivity
             val storeVm: ModelStoreViewModel = hiltViewModel(activity)
             val localImport by storeVm.localImport.collectAsStateWithLifecycle()
+            val installedModels by storeVm.installedModels.collectAsStateWithLifecycle()
 
             ModelSetupScreen(
                 innerPadding = innerPadding,
@@ -294,13 +295,7 @@ fun TNavigation(
                     onModelSetupComplete()
                 },
                 onOpenStore = { navController.navigate(NavScreens.ModelStore.route) },
-                onLocalImport = { uri, name, size, type ->
-                    storeVm.importLocalModel(uri, name, size, type) {
-                        if (navController.currentBackStackEntry?.destination?.route == NavScreens.ModelSetup.route) {
-                            onModelSetupComplete()
-                        }
-                    }
-                },
+                hasInstalledModels = installedModels.isNotEmpty(),
                 onSkip = { onModelSetupComplete() }
             )
         }

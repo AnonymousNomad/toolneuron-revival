@@ -36,6 +36,7 @@ object LaptopCodec {
             if (active !in wsIds) throw LaptopStateError("active workspace missing: $active")
         }
         state.workspaces.forEach { workspace ->
+            try { workspace.vibeDraft?.validate() } catch (_: Exception) { throw LaptopStateError("invalid Vibe draft") }
             try { workspace.companion?.validate() } catch (_: Exception) { throw LaptopStateError("invalid companion plan") }
             try { workspace.creation?.validate() } catch (_: Exception) { throw LaptopStateError("invalid creation plan") }
         }
