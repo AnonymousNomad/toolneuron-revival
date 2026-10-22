@@ -86,6 +86,13 @@ private fun AppScaffoldInner() {
     val chats by homeViewModel.chats.collectAsStateWithLifecycle()
     val currentChatId by homeViewModel.currentChatId.collectAsStateWithLifecycle()
 
+    val report: com.dark.tool_neuron.viewmodel.BetaReportViewModel = hiltViewModel()
+    val reportScreenshot = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { navController.context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            report.acceptScreenshot(uri)
+        }
+    }
     val nextDestination = remember { scaffoldViewModel.resolveStartDestination() }
     val shouldLock by scaffoldViewModel.shouldLock.collectAsStateWithLifecycle()
     val vibeArchive = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip"), vibe::export)
@@ -288,6 +295,7 @@ private fun AppScaffoldInner() {
                 onWorkstationSetupComplete = scaffoldViewModel::markModelSetupDone,
                 onVibeExport = { vibeArchive.launch(it) },
                 onVibeCapture = { vibeImage.launch(it) },
+                onReportScreenshot = { reportScreenshot.launch(arrayOf("image/png", "image/jpeg")) },
             )
         }
     }

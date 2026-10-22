@@ -94,6 +94,7 @@ fun TNavigation(
     onWorkstationSetupComplete: () -> Unit = {},
     onVibeExport: (String) -> Unit = {},
     onVibeCapture: (String) -> Unit = {},
+    onReportScreenshot: () -> Unit = {},
 ) {
     val transitions = rememberNavTransitions()
 
@@ -248,6 +249,11 @@ fun TNavigation(
                     }
                 },
             )
+        }
+        composable(NavScreens.BetaReport.route) {
+            val activity = LocalContext.current as ComponentActivity
+            val report: com.dark.tool_neuron.viewmodel.BetaReportViewModel = hiltViewModel(activity)
+            com.dark.tool_neuron.ui.screens.reporting.BetaReportScreen(innerPadding, onReportScreenshot, report)
         }
         composable(NavScreens.Companion.route) {
             val companion: com.dark.tool_neuron.viewmodel.CompanionViewModel = hiltViewModel()

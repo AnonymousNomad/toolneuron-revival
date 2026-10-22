@@ -25,7 +25,7 @@ fun ModelImportHost(content: @Composable () -> Unit) {
     val locked by scaffold.shouldLock.collectAsStateWithLifecycle()
     val progress by models.localImport.collectAsStateWithLifecycle()
     var pendingUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeImportUri by rememberSaveable { mutableStateOf<String?>(null) }
     var imported by rememberSaveable { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -50,7 +50,12 @@ fun ModelImportHost(content: @Composable () -> Unit) {
             }
             ModelImportTypePicker(metadata.first, onPick = { type ->
                 if (!locked && progress == null) {
-                    models.importLocalModel(uri, metadata.first, metadata.second, type) { imported = true }
+                    activeImportUri = value
+                    models.importLocalModel(uri, metadata.first, metadata.second, type) {
+                        runCatching { context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                        activeImportUri = null
+                        imported = true
+                    }
                     pendingUri = null
                 }
             }, onDismiss = { pendingUri = null })
@@ -58,8 +63,12 @@ fun ModelImportHost(content: @Composable () -> Unit) {
         if (progress != null) AlertDialog(onDismissRequest = {}, title = { Text("Local model import") }, text = {
             val current = progress!!
             Text(current.error ?: "Copying ${current.fileName}: ${current.copiedBytes} bytes. Keep the app open until the durable import finishes.")
-        }, confirmButton = { if (progress?.error != null) TextButton(onClick = models::dismissImportError) { Text("Close") } })
+        }, confirmButton = { if (progress?.error != null) TextButton(onClick = {
+                activeImportUri?.let { value -> runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(value), Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+                activeImportUri = null
+                models.dismissImportError()
+            }) { Text("Close") } })
         if (imported) AlertDialog(onDismissRequest = { imported = false }, title = { Text("Model imported") }, text = { Text("The model is saved locally. Choose it in Models or continue setup. Installation does not imply qualification.") }, confirmButton = { TextButton(onClick = { imported = false }) { Text("Done") } })
-        error?.let { message -> AlertDialog(onDismissRequest = { error = null }, title = { Text("Import unavailable") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Close") } }) }
+
     }
 }
