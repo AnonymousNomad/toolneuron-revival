@@ -82,16 +82,50 @@ class LaptopCore(
 
     data class WorkspaceEntry(val path: String, val isDir: Boolean, val bytes: Long)
 
-    fun createWorkspace(name: String): Result<WorkspaceRef> = runCatching {
+    fun createWorkspace(
+        name: String,
+        metadata: Map<String, String> = emptyMap(),
+        initialFiles: Map<String, String> = emptyMap(),
+    ): Result<WorkspaceRef> = runCatching {
         val clean = name.trim()
         require(clean.isNotEmpty() && clean.length <= 64) { "workspace name must be 1..64 characters" }
         val id = shortId("ws")
         val dir = File(workspacesBaseDir, id)
         if (!dir.mkdirs()) throw IllegalStateException("could not create workspace directory")
-        File(dir, "README.md").writeText("# $clean\n\nToolNeuron workspace (Cipher's Laptop P0).\n")
-        val ref = WorkspaceRef(id = id, name = clean, createdAtMs = nowMs(), metadata = mapOf("created_by" to "user"))
-        mutate { it.copy(workspaces = it.workspaces + ref, activeWorkspaceId = id) }
-        ref
+        try {
+            File(dir, "README.md").writeText("# $clean\n\nToolNeuron workspace.\n")
+            initialFiles.forEach { (path, text) ->
+                require(!File(path).isAbsolute)
+                val target = File(dir, path).canonicalFile
+                require(target.toPath().startsWith(dir.canonicalFile.toPath()) && target != dir.canonicalFile)
+                check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs())
+                target.writeText(text)
+            }
+            val ref = WorkspaceRef(id, clean, nowMs(), metadata + ("created_by" to "user"))
+            mutate { it.copy(workspaces = it.workspaces + ref, activeWorkspaceId = id) }
+            ref
+        } catch (failure: Throwable) {
+            dir.deleteRecursively()
+            throw failure
+        }
+    }
+
+    fun recordVibeBuild(record: com.dark.tool_neuron.studio.VibeBuildRecord): Result<com.dark.tool_neuron.studio.VibeBuildRecord> = runCatching {
+        check(hasPermission(com.dark.tool_neuron.studio.VibeStudio.CAPABILITY)) { "Vibe Studio permission denied" }
+        val evidence = EvidenceRecord(shortId("ev"), null, EvidenceKind.CHECK,
+            "Static bundle ${record.id}: ${record.verdict}; structural checks only, browser behavior not tested",
+            listOf("workspace:${record.workspaceId}", "vibe-build:${record.id}"), record.digest, nowMs())
+        val saved = record.copy(evidenceId = evidence.id)
+        val verification = VerificationRecord(shortId("vr"), null, "Build static web bundle ${record.id}",
+            "entrypoint and local asset checks pass", "deterministic snapshot checks (not browser/device acceptance)",
+            evidence.id, record.verdict, nowMs())
+        mutate { state ->
+            require(state.workspaces.any { it.id == record.workspaceId }) { "Unknown workspace" }
+            require(state.vibeBuilds.none { it.id == record.id }) { "Duplicate build id" }
+            state.copy(vibeBuilds = state.vibeBuilds + saved, evidence = state.evidence + evidence,
+                verifications = state.verifications + verification)
+        }
+        saved
     }
 
     fun openWorkspace(id: String): Result<Unit> = runCatching {

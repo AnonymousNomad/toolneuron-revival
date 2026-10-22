@@ -20,6 +20,7 @@ data class CipherLaptop(
     val permissions: List<PermissionGrant> = emptyList(),
     val resident: ResidentState = ResidentState(),
     val workstation: WorkstationSession = WorkstationSession(),
+    val vibeBuilds: List<com.dark.tool_neuron.studio.VibeBuildRecord> = emptyList(),
 )
 
 @Serializable

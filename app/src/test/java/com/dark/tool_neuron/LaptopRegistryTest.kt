@@ -12,6 +12,7 @@ import com.dark.tool_neuron.util.TaskAdmission
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,7 +38,8 @@ class LaptopRegistryTest {
 
     @Test
     fun capabilityVocabularyLookup() {
-        assertEquals(5, CapabilityRegistry.SEED.size)
+        assertEquals(6, CapabilityRegistry.SEED.size)
+        assertNotNull(CapabilityRegistry.lookup("dev.vibe.workspace@1"))
         val refs = CapabilityRegistry.SEED.map { CapabilityRegistry.ref(it) }
         assertEquals(refs.size, refs.toSet().size)
 

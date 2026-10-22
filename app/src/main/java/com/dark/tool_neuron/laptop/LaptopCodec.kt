@@ -35,6 +35,12 @@ object LaptopCodec {
         state.activeWorkspaceId?.let { active ->
             if (active !in wsIds) throw LaptopStateError("active workspace missing: $active")
         }
+        val buildIds = state.vibeBuilds.map { it.id }
+        if (buildIds.distinct().size != buildIds.size) throw LaptopStateError("duplicate Vibe build id")
+        state.vibeBuilds.forEach { build ->
+            if (build.workspaceId !in wsIds || state.evidence.none { it.id == build.evidenceId }) throw LaptopStateError("Vibe build references missing workspace/evidence")
+            if (!build.id.matches(Regex("vb-[a-f0-9]{32}")) || !build.digest.matches(Regex("[a-f0-9]{64}"))) throw LaptopStateError("invalid Vibe build identity")
+        }
         val taskIds = state.tasks.map { it.id }
         if (taskIds.size != taskIds.toSet().size) throw LaptopStateError("duplicate task id")
         val taskIdSet = taskIds.toSet()

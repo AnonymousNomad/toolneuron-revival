@@ -16,6 +16,14 @@ object CapabilityRegistry {
 
     val SEED: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(
+            id = "dev.vibe.workspace", version = 1,
+            description = "Create/edit project source, build/check static web bundles, preview offline and export selected artifacts in Vibe Studio.",
+            requiredEffects = listOf("filesystem.workspace", "preview.static"),
+            providers = listOf("tn.vibe.static"),
+            permissions = listOf("filesystem.workspace.read", "filesystem.workspace.write", "preview.static", "artifact.export"),
+            verification = listOf("entrypoint and local asset checks; immutable file hashes; explicit export"),
+        ),
+        CapabilityDescriptor(
             id = "dev.workspace.inspect",
             version = 1,
             description = "Inspect the active workspace: list files, read metadata, summarize state.",
@@ -138,6 +146,7 @@ object ProcedureRegistry {
 
 object ToolRegistry {
     val SEEDS: List<ToolRef> = listOf(
+        ToolRef("preview.static", ToolKind.FILESYSTEM, "Offline static preview", ToolStatus.PLANNED, "Verified static bundle core is present; sandboxed renderer is the next slice"),
         ToolRef("filesystem.workspace", ToolKind.FILESYSTEM, "Workspace files", ToolStatus.AVAILABLE, "Laptop workspace read/write under the app-owned directory"),
         ToolRef("terminal.execute", ToolKind.TERMINAL, "Embedded terminal", ToolStatus.AVAILABLE, "Platform shell (/system/bin/sh) via app-owned PTY; governed effect provider tn.terminal.system-sh"),
         ToolRef("git.cli", ToolKind.GIT, "Git", ToolStatus.PLANNED, "Requires the embedded development environment"),
