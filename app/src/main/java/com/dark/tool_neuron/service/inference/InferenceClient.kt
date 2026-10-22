@@ -89,6 +89,7 @@ object InferenceClient {
     // BIND_AUTO_CREATE makes Android respawn :inference the moment we killed
     // it. Consumed on the next disconnect callback.
     @Volatile private var userStopRequested: Boolean = false
+    @Volatile private var foregroundRequested: Boolean = false
 
     private val _contextUsage = MutableStateFlow(0f)
     val contextUsage: StateFlow<Float> = _contextUsage.asStateFlow()
@@ -383,6 +384,7 @@ object InferenceClient {
 
     fun startAndBind(context: Context) {
         appContext = context.applicationContext
+        foregroundRequested = true
         try {
             ContextCompat.startForegroundService(context, Intent(context, InferenceService::class.java))
         } catch (t: Throwable) {
@@ -392,6 +394,7 @@ object InferenceClient {
     }
 
     fun unbind() {
+        foregroundRequested = false
         val ctx = appContext ?: return
         try { ctx.unbindService(connection) } catch (_: Exception) {}
         _service.value = null
@@ -435,7 +438,7 @@ object InferenceClient {
         val ctx = appContext ?: return
         try { ctx.unbindService(connection) } catch (_: Exception) {}
         Handler(Looper.getMainLooper()).postDelayed({
-            performBind()
+            if (foregroundRequested) startAndBind(ctx) else performBind()
         }, REBIND_DELAY_MS)
     }
 
@@ -447,12 +450,7 @@ object InferenceClient {
             Log.w(TAG, "ensureBound timed out; attempting foreground service (re)start", e)
             val ctx = appContext
             if (ctx != null) {
-                try {
-                    ContextCompat.startForegroundService(ctx, Intent(ctx, InferenceService::class.java))
-                } catch (t: Throwable) {
-                    Log.e(TAG, "recovery startForegroundService failed", t)
-                }
-                performBind()
+                startAndBind(ctx)
             }
             withTimeout(BIND_TIMEOUT_MS) { _service.first { it != null }!! }
         }

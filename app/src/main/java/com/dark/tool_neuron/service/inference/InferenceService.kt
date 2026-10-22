@@ -139,7 +139,6 @@ class InferenceService : Service() {
         super.onCreate()
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
         setupNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Inference ready"))
         engine.setTokenBatchSize(STREAMING_TOKEN_BATCH_BYTES)
         try {
             TnSecurity.init(
@@ -277,6 +276,13 @@ class InferenceService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             killSelfProcess()
+            return START_NOT_STICKY
+        }
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification("Inference ready"))
+        } catch (failure: RuntimeException) {
+            Log.e(TAG, "Foreground promotion rejected; stopping the started service", failure)
+            stopSelf(startId)
         }
         return START_NOT_STICKY
     }

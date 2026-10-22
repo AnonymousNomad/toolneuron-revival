@@ -42,3 +42,10 @@ Next mission: TN-CLOUD-00.
 - Fresh-context review: no P0/P1. Fixed stale “Finish to Desktop” copy. Deferred inherited Phase 7 P2s: unlock can bypass incomplete onboarding, and permission persistence failure can leave UI state ahead of durable state. Earlier import process-death orphan cleanup also remains in Phase 7.
 - Engine source prerequisite requested asynchronously; independent reconstruction continues. No Covert runtime operation or overall Phase 0 completion claimed.
 - Next: inference foreground-promotion lifecycle deferral, followed by workstation/Vibe reconciliation.
+
+## TN-CLOUD-00.3 — inference lifecycle deferral, 2026-10-22
+- Start SHA: c7b83a6. Scope: preserve the existing inference backend and manifest while separating bind-only service initialization from explicit foreground starts.
+- Removed unconditional promotion from onCreate. Explicit non-STOP starts promote from onStartCommand; platform runtime rejection stops that start ID. Existing STOP teardown remains separate.
+- Fresh-context review caught a notification/foreground recovery regression in bind-only crash rebinds. The client now preserves prior explicit foreground intent across those rebinds, clears it on unbind, and uses the same explicit startup path for timeout recovery.
+- FAST and SLICE PASS: existing 120 JVM tests green, debug APK with both native ABIs built. These checks establish compilation/regression readiness, not reproduction of Android foreground-service restrictions. Device background-start, notification Stop and process-death recovery acceptance remain NOT TESTED; no synthetic JVM platform test is claimed.
+- No security permissions/service types or inference model behavior were changed. Next: workstation/window/taskbar/telemetry/boot reconstruction; Covert engine source request remains pending.
