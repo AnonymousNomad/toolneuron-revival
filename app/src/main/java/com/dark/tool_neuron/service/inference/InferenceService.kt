@@ -376,7 +376,8 @@ class InferenceService : Service() {
                 try {
                     val config = parseConfig(configJson)
                     val runtimeId = config.optString("runtimeId", GgmlBackend.ID)
-                    val info = localRuntime.load(runtimeId, modelPath, loadOptions(config), configure = { applySamplingFromConfig(config) }) { file ->
+                    val loadId = java.util.UUID.randomUUID().toString()
+                    val info = localRuntime.load(runtimeId, modelPath, loadOptions(config), loadId = loadId, configure = { applySamplingFromConfig(config) }) { file ->
                         logDeviceProfile()
                         val modelSize = file.length()
                         val memAvail = readMemAvailableBytes()
@@ -388,7 +389,7 @@ class InferenceService : Service() {
                         detectUnsupportedQuantization(file.path)?.let { error(it) }
                     }
                     updateNotification("Model loaded · $runtimeId")
-                    safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId)) }
+                    safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId, loadId)) }
                 } catch (e: OutOfMemoryError) {
                     try { localRuntime.unload() } catch (_: Throwable) {}
                     captureKt("loadModel", "path=$modelPath", "OOM",
@@ -436,9 +437,10 @@ class InferenceService : Service() {
             }
             scope.launch {
                 try {
-                    val info = localRuntime.loadLegacyDescriptor(runtimeId, loadOptions(config), configure = { applySamplingFromConfig(config) }) { pfd.detachFd() }
+                    val loadId = java.util.UUID.randomUUID().toString()
+                    val info = localRuntime.loadLegacyDescriptor(runtimeId, loadOptions(config), loadId = loadId, configure = { applySamplingFromConfig(config) }) { pfd.detachFd() }
                     updateNotification("Model loaded · $runtimeId")
-                    safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId)) }
+                    safeCallback(callback) { it.onSuccess(runtimeInfo(info, runtimeId, loadId)) }
                 } catch (e: OutOfMemoryError) {
                     try { localRuntime.unload() } catch (_: Throwable) {}
                     safeCallback(callback) { it.onError("Out of memory") }
@@ -491,20 +493,25 @@ class InferenceService : Service() {
             )
         }
 
+        override fun generateMultiTurnForLoad(messagesJson: String, maxTokens: Int, loadId: String, callback: IGenerationCallback) {
+            if (loadId.isBlank()) { safeCallback(callback) { it.onError("Missing loaded model identity") }; return }
+            collectLocalFlow(localRuntime.generate(messagesJson, maxTokens, multiTurn = true, expectedLoadId = loadId), callback)
+        }
+
         override fun stopGeneration() {
             localRuntime.cancel()
         }
 
         override fun setSampling(samplingJson: String) {
-            engine.updateSamplerParams(samplingJson)
+            localRuntime.configure(GgmlBackend.ID) { check(engine.updateSamplerParams(samplingJson)) { "Native sampler parameters rejected" } }
         }
 
         override fun setSystemPrompt(prompt: String) {
-            engine.setSystemPrompt(prompt)
+            localRuntime.configure(GgmlBackend.ID) { engine.setSystemPrompt(prompt) }
         }
 
         override fun setChatTemplate(template: String) {
-            engine.setChatTemplate(template)
+            localRuntime.configure(GgmlBackend.ID) { engine.setChatTemplate(template) }
         }
 
         override fun isToolCallingSupported(): Boolean = false
@@ -529,24 +536,24 @@ class InferenceService : Service() {
             legacyGgmlReady() && engine.isLoaded && engine.supportsThinking()
 
         override fun setThinkingEnabled(enabled: Boolean) {
-            engine.setThinkingEnabled(enabled)
+            localRuntime.configure(GgmlBackend.ID) { engine.setThinkingEnabled(enabled) }
         }
 
         override fun setPromptCacheDir(path: String) {
-            engine.setPromptCacheDir(path)
+            localRuntime.configure(GgmlBackend.ID, allowEmpty = true) { engine.setPromptCacheDir(path) }
         }
 
-        override fun warmUp(): Boolean = legacyGgmlReady() && engine.warmUp()
+        override fun warmUp(): Boolean = runCatching { localRuntime.configure(GgmlBackend.ID) { engine.warmUp() } }.getOrDefault(false)
 
         override fun setThreadMode(mode: Int) {
-            engine.setThreadMode(mode)
+            localRuntime.configure(GgmlBackend.ID, allowEmpty = true) { engine.setThreadMode(mode) }
         }
 
         override fun getStateSize(): Long = engine.getStateSize()
 
         override fun stateSaveToFile(path: String): Boolean = engine.stateSaveToFile(path)
 
-        override fun stateLoadFromFile(path: String): Boolean = legacyGgmlReady() && engine.stateLoadFromFile(path)
+        override fun stateLoadFromFile(path: String): Boolean = runCatching { localRuntime.configure(GgmlBackend.ID) { engine.stateLoadFromFile(path) } }.getOrDefault(false)
 
         override fun loadVlmProjector(path: String, threads: Int, imageMinTokens: Int, imageMaxTokens: Int): Boolean {
             if (!legacyGgmlReady()) return false
@@ -1170,9 +1177,9 @@ class InferenceService : Service() {
         cacheTypeV = config.optString("cacheTypeV", "q8_0"),
     )
 
-    private fun runtimeInfo(info: String, runtimeId: String): String =
+    private fun runtimeInfo(info: String, runtimeId: String, loadId: String? = localRuntime.status.value.loadId): String =
         (try { JSONObject(info) } catch (_: Exception) { JSONObject() })
-            .put("runtimeId", runtimeId).toString()
+            .put("runtimeId", runtimeId).put("loadId", loadId).toString()
 
     private fun collectLocalFlow(
         flow: Flow<LocalGenerationEvent>,

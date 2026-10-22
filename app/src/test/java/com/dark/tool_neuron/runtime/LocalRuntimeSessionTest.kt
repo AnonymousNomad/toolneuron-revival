@@ -41,6 +41,42 @@ class LocalRuntimeSessionTest {
         assertTrue(runCatching { session.generate("prompt", 2).toList() }.isFailure)
     }
 
+    @Test fun generationRejectsReplacedOrReconfiguredLoadIdentity() = runBlocking {
+        val backend = ContractBackend()
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        session.load(backend.id, model().path, loadId = "first")
+        assertEquals("first", session.status.value.loadId)
+        session.load(backend.id, model().path, loadId = "second")
+        assertTrue(runCatching { session.generate("prompt", 2, expectedLoadId = "first").toList() }.isFailure)
+        session.configure(backend.id) { }
+        assertTrue(runCatching { session.generate("prompt", 2, expectedLoadId = "second").toList() }.isFailure)
+        assertEquals(0, backend.generations)
+    }
+
+    @Test fun configurationCannotMutateAnActiveGeneration() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val backend = ContractBackend(events = flow { started.complete(Unit); finish.await(); emit(LocalGenerationEvent.Done) })
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        session.load(backend.id, model().path, loadId = "selected")
+        val running = launch { session.generate("prompt", 2, expectedLoadId = "selected").toList() }
+        withTimeout(1000) { started.await() }
+        var mutated = false
+        assertTrue(runCatching { session.configure(backend.id) { mutated = true } }.isFailure)
+        assertFalse(mutated)
+        finish.complete(Unit)
+        running.join()
+    }
+
+    @Test fun failedConfigurationCannotLeaveAUsableRuntime() = runBlocking {
+        val backend = ContractBackend()
+        val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))
+        session.load(backend.id, model().path)
+        assertTrue(runCatching { session.configure(backend.id) { error("invalid sampler") } }.isFailure)
+        assertEquals(LocalRuntimePhase.ERROR, session.status.value.phase)
+        assertTrue(runCatching { session.generate("prompt", 2).toList() }.isFailure)
+    }
+
     @Test fun unknownRuntimeDoesNotSelectADefault() = runBlocking {
         val backend = ContractBackend()
         val session = LocalRuntimeSession(listOf(backend), listOf(temp.root))

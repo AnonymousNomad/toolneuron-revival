@@ -506,7 +506,7 @@ object InferenceClient {
     fun getModelInfo(): String? =
         try { _service.value?.getModelInfo() } catch (_: Exception) { null }
 
-    fun generateMultiTurn(messagesJson: String, maxTokens: Int): Flow<InferenceEvent> =
+    fun generateMultiTurn(messagesJson: String, maxTokens: Int, loadId: String? = null): Flow<InferenceEvent> =
         callbackFlow {
             val svc = withTimeoutOrNull(BIND_TIMEOUT_MS) { _service.first { it != null } }
             if (svc == null) {
@@ -516,7 +516,8 @@ object InferenceClient {
             }
             val cb = generationCallback { event -> trySend(event) }
             try {
-                svc.generateMultiTurn(messagesJson, maxTokens, cb)
+                if (loadId == null) svc.generateMultiTurn(messagesJson, maxTokens, cb)
+                else svc.generateMultiTurnForLoad(messagesJson, maxTokens, loadId, cb)
             } catch (e: Exception) {
                 trySend(InferenceEvent.Error(e.message ?: "Service error"))
                 close()

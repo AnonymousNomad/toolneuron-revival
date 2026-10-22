@@ -20,6 +20,7 @@ data class LocalRuntimeStatus(
     val loadedRuntime: String? = null,
     val phase: LocalRuntimePhase = LocalRuntimePhase.EMPTY,
     val error: String? = null,
+    val loadId: String? = null,
 )
 
 class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRoots: List<File>) {
@@ -33,29 +34,31 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
         runtimeId: String,
         path: String,
         options: LocalLoadOptions = LocalLoadOptions(),
+        loadId: String = java.util.UUID.randomUUID().toString(),
         configure: () -> Unit = {},
         validate: (File) -> Unit = {},
     ): String {
         lateinit var file: File
-        return loadWith(runtimeId, prepare = { file = ownedGguf(path); validate(file) }) { backend -> backend.load(file, options).also { configure() } }
+        return loadWith(runtimeId, loadId, prepare = { file = ownedGguf(path); validate(file) }) { backend -> backend.load(file, options).also { configure() } }
     }
 
     suspend fun loadLegacyDescriptor(runtimeId: String, fd: Int, options: LocalLoadOptions): String =
         loadLegacyDescriptor(runtimeId, options) { fd }
 
-    suspend fun loadLegacyDescriptor(runtimeId: String, options: LocalLoadOptions, configure: () -> Unit = {}, acquire: () -> Int): String =
-        loadWith(runtimeId, prepare = {
+    suspend fun loadLegacyDescriptor(runtimeId: String, options: LocalLoadOptions, loadId: String = java.util.UUID.randomUUID().toString(), configure: () -> Unit = {}, acquire: () -> Int): String =
+        loadWith(runtimeId, loadId, prepare = {
             require(runtimeId == GgmlBackend.ID) { "Only the existing GGML backend supports legacy descriptors; import a durable GGUF file" }
         }) { backend -> backend.loadLegacyDescriptor(acquire(), options).also { configure() } }
 
     private suspend fun loadWith(
         runtimeId: String,
+        loadId: String,
         prepare: () -> Unit,
         loader: suspend (LocalModelBackend) -> String,
     ): String {
         cancel()
         return mutex.withLock {
-            _status.value = _status.value.copy(requestedRuntime = runtimeId, phase = LocalRuntimePhase.LOADING, error = null)
+            _status.value = _status.value.copy(requestedRuntime = runtimeId, phase = LocalRuntimePhase.LOADING, error = null, loadId = null)
             var attempted: LocalModelBackend? = null
             try {
                 val backend = backends[runtimeId] ?: error("Unknown local runtime: $runtimeId; no default substitution")
@@ -67,7 +70,7 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
                 attempted = backend
                 val info = loader(backend)
                 active = backend
-                _status.value = LocalRuntimeStatus(runtimeId, runtimeId, LocalRuntimePhase.READY)
+                _status.value = LocalRuntimeStatus(runtimeId, runtimeId, LocalRuntimePhase.READY, loadId = loadId)
                 info
             } catch (failure: Throwable) {
                 attempted?.let { backend ->
@@ -81,8 +84,8 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
         }
     }
 
-    fun generate(prompt: String, maxTokens: Int, multiTurn: Boolean = false): Flow<LocalGenerationEvent> =
-        guardedGeneration(null) { backend ->
+    fun generate(prompt: String, maxTokens: Int, multiTurn: Boolean = false, expectedLoadId: String? = null): Flow<LocalGenerationEvent> =
+        guardedGeneration(null, expectedLoadId) { backend ->
             flow {
                 require(maxTokens > 0) { "Token limit must be positive" }
                 var terminal = false
@@ -100,9 +103,9 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
         }
 
     fun <T> legacyGeneration(runtimeId: String, source: () -> Flow<T>): Flow<T> =
-        guardedGeneration(runtimeId) { source() }
+        guardedGeneration(runtimeId, null) { source() }
 
-    private fun <T> guardedGeneration(runtimeId: String?, source: (LocalModelBackend) -> Flow<T>): Flow<T> = flow {
+    private fun <T> guardedGeneration(runtimeId: String?, expectedLoadId: String?, source: (LocalModelBackend) -> Flow<T>): Flow<T> = flow {
         check(mutex.tryLock()) { "Another local runtime operation is active" }
         try {
             val backend = active
@@ -110,6 +113,7 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
                 _status.value.requestedRuntime == backend.id && (runtimeId == null || runtimeId == backend.id)) {
                 _status.value.error ?: "No selected runtime is ready"
             }
+            check(expectedLoadId == null || expectedLoadId == _status.value.loadId) { "Loaded model or configuration changed; reload explicitly" }
             _status.value = _status.value.copy(phase = LocalRuntimePhase.GENERATING, error = null)
             var completed = false
             try {
@@ -119,6 +123,18 @@ class LocalRuntimeSession(backends: List<LocalModelBackend>, private val ownedRo
                 try { if (!completed) backend.cancel() }
                 finally { _status.value = _status.value.copy(phase = LocalRuntimePhase.READY) }
             }
+        } finally { mutex.unlock() }
+    }
+
+    fun <T> configure(runtimeId: String, allowEmpty: Boolean = false, action: () -> T): T {
+        check(mutex.tryLock()) { "Another local runtime operation is active" }
+        try {
+            check((active?.id == runtimeId && _status.value.phase == LocalRuntimePhase.READY && _status.value.requestedRuntime == runtimeId) || (allowEmpty && active == null && _status.value.phase == LocalRuntimePhase.EMPTY)) { "Selected runtime is not ready" }
+            _status.value = _status.value.copy(loadId = null)
+            return action().also { _status.value = _status.value.copy(loadId = java.util.UUID.randomUUID().toString()) }
+        } catch (failure: Throwable) {
+            _status.value = _status.value.copy(phase = LocalRuntimePhase.ERROR, loadId = null, error = failure.message ?: "Configuration failed")
+            throw failure
         } finally { mutex.unlock() }
     }
 

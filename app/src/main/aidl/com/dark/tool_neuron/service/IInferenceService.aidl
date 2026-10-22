@@ -18,6 +18,7 @@ interface IInferenceService {
     // Generation
     void generate(String prompt, int maxTokens, IGenerationCallback callback);
     void generateMultiTurn(String messagesJson, int maxTokens, IGenerationCallback callback);
+    void generateMultiTurnForLoad(String messagesJson, int maxTokens, String loadId, IGenerationCallback callback);
     void stopGeneration();
 
     // Summarize the conversation, drop the in-context KV cache, and emit the

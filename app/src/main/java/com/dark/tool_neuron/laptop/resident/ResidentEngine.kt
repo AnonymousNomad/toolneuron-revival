@@ -72,6 +72,7 @@ class ResidentEngine @Inject constructor(
         var lookups: Int,
         var previousIntent: IntentEnvelope?,
         val workspaceId: String? = null,
+        val loadId: String? = null,
         val recentExchanges: ArrayDeque<Pair<String, String>> = ArrayDeque(),
     )
 
@@ -128,13 +129,19 @@ class ResidentEngine @Inject constructor(
             return _state.value
         }
 
+        val loadId = runCatching { JSONObject(load.getOrThrow()).getString("loadId").takeIf { it.isNotBlank() && it != "null" } }.getOrNull()
+        if (loadId == null) {
+            runCatching { InferenceClient.unloadModel() }
+            _state.value = ResidentUiState.Unavailable("Runtime did not return a loaded model identity")
+            return _state.value
+        }
         val ws = laptop.core.activeWorkspace()
         val record = laptop.core.startResidentSession(identity, ws?.id, null, expectedAssignment = assignment).getOrElse {
             runCatching { InferenceClient.unloadModel() }
             _state.value = ResidentUiState.Unavailable("could not persist resident session: ${it.message}")
             return _state.value
         }
-        session = Session(record.id, identity, model, 0, 0, null, ws?.id)
+        session = Session(record.id, identity, model, 0, 0, null, ws?.id, loadId)
         _messages.value = emptyList()
         _streaming.value = ""
         dossierCache = laptop.modelDossiers(modelRepo.models.value)
@@ -159,7 +166,7 @@ class ResidentEngine @Inject constructor(
         val ctx = buildTurnContext(s.workspaceId)
 
         val turn1 = ResidentContext.buildTurn(text, ctx, emptyList(), s.previousIntent, s.recentExchanges.toList(), finalTurn = false)
-        val r1 = generateText(turn1.system, turn1.user, MAX_NEW_TOKENS)
+        val r1 = generateText(turn1.system, turn1.user, MAX_NEW_TOKENS, s.loadId)
         if (r1.isFailure) {
             val msg = if (cancelRequested) "generation cancelled by user"
             else "resident generation failed: ${r1.exceptionOrNull()?.message}"
@@ -193,7 +200,7 @@ class ResidentEngine @Inject constructor(
         if (requested.isNotEmpty()) {
             val turn2 = ResidentContext.buildTurn(text, ctx, lookupResults, s.previousIntent, s.recentExchanges.toList(), finalTurn = true)
             tokens += turn2.approxTokens
-            val r2 = generateText(turn2.system, turn2.user, MAX_NEW_TOKENS)
+            val r2 = generateText(turn2.system, turn2.user, MAX_NEW_TOKENS, s.loadId)
             if (r2.isFailure) {
                 val msg = if (cancelRequested) "generation cancelled by user"
                 else "resident generation failed: ${r2.exceptionOrNull()?.message}"
@@ -278,7 +285,7 @@ class ResidentEngine @Inject constructor(
         _messages.value = (_messages.value + message).takeLast(MAX_TRANSCRIPT)
     }
 
-    private suspend fun generateText(system: String, user: String, maxTokens: Int): Result<String> =
+    private suspend fun generateText(system: String, user: String, maxTokens: Int, loadId: String?): Result<String> =
         withContext(Dispatchers.IO) {
             _streaming.value = ""
             cancelRequested = false
@@ -288,7 +295,7 @@ class ResidentEngine @Inject constructor(
             val sb = StringBuilder()
             try {
                 withTimeout(GENERATE_TIMEOUT_MS) {
-                    InferenceClient.generateMultiTurn(arr.toString(), maxTokens).collect { ev ->
+                    InferenceClient.generateMultiTurn(arr.toString(), maxTokens, loadId).collect { ev ->
                         when (ev) {
                             is InferenceEvent.Token -> {
                                 sb.append(ev.text)
