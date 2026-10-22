@@ -55,11 +55,12 @@ class LaptopCore(
         persistence.save(LaptopCodec.encode(state))
     }
 
+    @Synchronized
     private fun mutate(block: (CipherLaptop) -> CipherLaptop): CipherLaptop {
         val next = block(_state.value)
         LaptopCodec.validate(next)
-        _state.value = next
         persist(next)
+        _state.value = next
         return next
     }
 

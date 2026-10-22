@@ -35,6 +35,7 @@ fun AbilitiesScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val terminalProvider by viewModel.terminalProviderState.collectAsStateWithLifecycle()
+    val status by viewModel.status.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -55,6 +56,11 @@ fun AbilitiesScreen(
                         color = Retro.TextDim,
                         style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
                     )
+                }
+            }
+            status?.let { message ->
+                item(key = "permission-status") {
+                    Text(message, fontFamily = RetroMono, color = Retro.Amber)
                 }
             }
             items(viewModel.capabilities) { cap ->

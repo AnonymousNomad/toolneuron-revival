@@ -55,3 +55,11 @@ Next mission: TN-CLOUD-00.
 - `AnonymousNomad/anonymousnomad.github.io` is not the ToolNeuron publication destination.
 - Existing Floot project already contains ToolNeuron marketplace/publisher/GameBridge/Foundry/catalog material.
 - Cloud publication instructions were corrected accordingly.
+
+## TN-CLOUD-00.4 — persistence publication boundary, 2026-10-22
+- Start SHA: 743af65 (includes the owner's Floot corrections and lifecycle slice 994e138).
+- Reproduced the inherited permission-save defect with a real LaptopCore regression: rejected storage write still published a revoked permission. The test failed before the fix and passed after it.
+- LaptopCore now serializes mutate blocks and saves validated next state before publishing it. Abilities displays status/error messages. A failed save no longer announces its proposed permission/task state to collectors.
+- FAST and SLICE PASS: 121 JVM tests, no failures/errors/skips; both-ABI debug APK built. Fresh-context review found no blocker or evident lock cycle.
+- This closes the visible-state-ahead-of-save P2 noted in TN-CLOUD-00.2. It does not establish HXS disk transaction/crash guarantees or serialize all pre-mutation reads; those remain Phase 7 concerns. No device acceptance claimed.
+- Next: persistent workstation windows, taskbar, truthful status strip and skippable boot.

@@ -29,6 +29,8 @@ Prebuilt AARs in `libs/`:
 
 ## Build & Release
 
+- **Laptop persistence boundary:** `LaptopCore.mutate` serializes mutations, validates and saves before publishing StateFlow state. A reported save failure does not publish the proposed permission/task state to collectors. This does not establish transactional disk/crash guarantees for the HXS backend. Abilities displays the operation status, including save errors.
+
 - **Inference service lifecycle:** bind-only `onCreate` initializes channels/backends without foreground promotion. `onStartCommand` promotes explicit starts, handles Android runtime rejection by stopping that start ID, and keeps the STOP teardown path separate. The client remembers explicit foreground intent across crash rebinds and clears it on unbind; bind-only recovery stays bind-only. Manifest service types/permissions and inference backend behavior are unchanged. Physical Android background-start/notification acceptance requires a device run.
 
 - **Workstation onboarding:** RAG continues to Cipher setup, then the shared Abilities surface, then Desktop. `modelSetupDone` is persisted only after Abilities continues; selecting no grants is valid. Existing completed users keep their current routing. Capability grants never install or execute providers. Laptop's Connections panel distinguishes the terminal probe from declared tool availability. `ModelQualification.kt` defines fingerprint/runtime/device/battery-bound, evidence-backed PASS/FAIL/UNKNOWN records; complete unique checks are required, absent measurements remain null, and installed-model dossiers stay UNKNOWN until device evidence is wired in. This contract does not run a model battery or change compatibility/task admission.
