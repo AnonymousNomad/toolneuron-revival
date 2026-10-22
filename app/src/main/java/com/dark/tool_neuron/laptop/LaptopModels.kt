@@ -44,6 +44,7 @@ data class WorkspaceRef(
     val metadata: Map<String, String> = emptyMap(),
     val conversationIds: List<String> = emptyList(),
     val creation: com.dark.tool_neuron.creation.CreationPlan? = null,
+    val companion: com.dark.tool_neuron.companion.CompanionPlan? = null,
 )
 
 @Serializable

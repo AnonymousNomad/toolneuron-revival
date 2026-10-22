@@ -152,6 +152,17 @@ class LaptopCore(
         }
     }
 
+    fun addMediaReference(workspaceId: String, title: String, locator: String, classification: com.dark.tool_neuron.companion.MediaSourceClass, rights: String): Result<Unit> = runCatching {
+        mutate { state ->
+            check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.companion.CompanionPlan.CAPABILITY && it.granted }) { "Companion planning permission denied" }
+            val workspace = state.workspaces.singleOrNull { it.id == workspaceId } ?: error("Unknown project")
+            val plan = workspace.companion ?: com.dark.tool_neuron.companion.CompanionPlan()
+            val updated = plan.copy(media = plan.media + com.dark.tool_neuron.companion.MediaReference(shortId("media"), title.trim(), locator.trim(), classification, rights.trim())).also { it.validate() }
+            state.copy(workspaces = state.workspaces.map { if (it.id == workspaceId) it.copy(companion = updated) else it })
+        }
+        Unit
+    }
+
     fun updateCreationPlan(workspaceId: String, edit: (com.dark.tool_neuron.creation.CreationPlan) -> com.dark.tool_neuron.creation.CreationPlan): Result<com.dark.tool_neuron.creation.CreationPlan> = runCatching {
         val next = mutate { state ->
             check(state.permissions.any { it.capabilityId == com.dark.tool_neuron.creation.CreationPlan.CAPABILITY && it.granted }) { "Creator planning permission denied" }

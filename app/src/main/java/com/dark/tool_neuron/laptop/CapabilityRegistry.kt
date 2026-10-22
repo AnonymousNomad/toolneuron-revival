@@ -15,6 +15,7 @@ object CapabilityRegistry {
     )
 
     val SEED: List<CapabilityDescriptor> = listOf(
+        CapabilityDescriptor(id = "companion.plan", version = 1, description = "Register declared legal media references for a canonical project; no playback, game input or bridge transport is granted.", providers = listOf("tn.companion.plan"), permissions = listOf("filesystem.workspace.write")),
         CapabilityDescriptor(id = "media.creation.plan", version = 1,
             description = "Persist local story/series hierarchy, character bible, asset provenance and audio slots; check continuity and export a production plan. Rendering remains separately unavailable.",
             requiredEffects = listOf("filesystem.workspace"), providers = listOf("tn.creation.plan"),

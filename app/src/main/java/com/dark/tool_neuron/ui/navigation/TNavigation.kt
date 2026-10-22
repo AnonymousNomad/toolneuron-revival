@@ -249,6 +249,10 @@ fun TNavigation(
                 },
             )
         }
+        composable(NavScreens.Companion.route) {
+            val companion: com.dark.tool_neuron.viewmodel.CompanionViewModel = hiltViewModel()
+            com.dark.tool_neuron.ui.screens.companion.CompanionScreen(innerPadding, { navController.navigate(it) }, companion)
+        }
         composable(NavScreens.Creator.route) {
             val activity = LocalContext.current as ComponentActivity
             val creator: com.dark.tool_neuron.viewmodel.CreatorViewModel = hiltViewModel(activity)
