@@ -19,3 +19,7 @@ The APK and automated evidence are prepared; **public download is pending GitHub
 ---
 
 After actual release upload, verify its asset hash, replace the pending-download sentence with that real release URL, and append the exact version/hash from the manifest. Record the posted message URL; do not mark this outbox as sent before posting succeeds.
+
+## Verified development artifact
+
+Version **3.1.0-cloud.1 / code 40**; source `92d212648c659a219f39b2b1b3fb6cea0765314d`; **222 JVM tests PASS**, both-ABI debug APK and five native recovery fixtures PASS. APK SHA-256 `1ea9c32bbb20ea531a1a12bc5ff2178c1c18e793a3e0efa6f44b3eac952c4148`. Debug signing/testing only. Physical Android/model qualification **NOT TESTED**. Public APK download remains pending upload.

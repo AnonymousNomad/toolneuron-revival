@@ -1,0 +1,45 @@
+{
+  "format": "toolneuron-development-artifact/1",
+  "versionName": "3.1.0-cloud.1",
+  "versionCode": 40,
+  "applicationId": "com.anonymousnomad.toolneuron.covert",
+  "sourceSha": "92d212648c659a219f39b2b1b3fb6cea0765314d",
+  "tag": "v3.1.0-cloud.1",
+  "artifact": "toolneuron-3.1.0-cloud.1-debug.apk",
+  "localPath": "/workspace/artifacts/toolneuron-3.1.0-cloud.1-debug.apk",
+  "bytes": 110407682,
+  "sha256": "1ea9c32bbb20ea531a1a12bc5ff2178c1c18e793a3e0efa6f44b3eac952c4148",
+  "signing": "ANDROID_DEBUG_TESTING_ONLY",
+  "signerCertificateSha256": "fa6f4eb2390691f3c18115afe8ada0283516f8eabdd74eb54c3b127bf52f53af",
+  "abis": [
+    "arm64-v8a",
+    "x86_64"
+  ],
+  "minSdk": 31,
+  "targetSdk": 37,
+  "tests": {
+    "tests": 222,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "hostNativeRecoveryFixtures": 5,
+  "gates": {
+    "fast": "PASS",
+    "slice": "PASS",
+    "release": "PASS",
+    "embeddedSourceRevision": "VERIFIED",
+    "apkSignature": "VERIFIED",
+    "physicalAndroid": "NOT TESTED",
+    "nativeCovert": "BLOCKED_LOCAL_SOURCE_UNAVAILABLE",
+    "actualModelQualification": "NOT TESTED",
+    "freshEnvironmentRestore": "NOT TESTED"
+  },
+  "publication": {
+    "githubRelease": "OUTBOX_NOT_UPLOADED_API_FORBIDDEN",
+    "floot": "OUTBOX_NOT_APPLIED_NO_CONNECTOR",
+    "discord": "OUTBOX_NOT_SENT_NO_CREDENTIAL",
+    "publicDownloadUrl": null
+  },
+  "buildCommand": "./gradlew :app:testDebugUnitTest :app:assembleDebug -Ptn.sourceSha=92d212648c659a219f39b2b1b3fb6cea0765314d --no-daemon --console=plain"
+}
